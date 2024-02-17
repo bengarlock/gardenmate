@@ -1,18 +1,11 @@
 'use client';
-
-import NavBar from "@/app/NavBar";
-import {globalStore} from "@/app/globalstore";
-import {useEffect} from 'react';
 import {usePathname} from 'next/navigation';
-import Plants from "@/app/plants/page";
-
 
 export default function Home() {
-    const pathname = usePathname()
 
     return (
-        <div>
-                home
+        <div className="w-full flex flex-row justify-center h-screen bg-gray-500 bg-opacity-90">
+            Home
         </div>
 
     );

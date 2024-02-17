@@ -8,7 +8,7 @@ const NavBar = () => {
     const pathname = usePathname()
 
     return (
-        <div className="w-1/6 min-w-44 flex flex-col justify-start h-screen bg-gray-900 bg-opacity-75">
+        <div className="w-1/6 flex flex-col justify-start h-screen bg-gray-900 bg-opacity-75">
 
             <h1 className="w-full flex justify-center p-3 mb-11 text-amber-700">GardenMate</h1>
 
