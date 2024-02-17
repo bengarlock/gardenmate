@@ -4,4 +4,4 @@ const nextConfig = {
     basePath: '/gardenmate'
 };
 
-export default nextConfig;
+module.exports = nextConfig
