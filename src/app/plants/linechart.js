@@ -1,5 +1,5 @@
 import * as d3 from "d3";
-import {useRef, useEffect} from "react";
+import {useRef, useEffect, useState} from "react";
 
 export default function LinePlot({
                                      data = [1, 2, 3, 4],
@@ -11,17 +11,29 @@ export default function LinePlot({
                                      marginLeft = 40
                                  }) {
 
+    const [weatherData, setWeatherData] = useState([])
+
+    useEffect(() => {
+        fetch('https://bengarlock.com/api/v1/garden/weather/')
+            .then(res => res.json())
+            .then(data => setWeatherData(data))
+            .catch(err => console.log(err))
+    }, []);
+
 
     const gx = useRef();
     const gy = useRef();
+
     const x = d3.scaleLinear(
         [0, data.length - 1],
         [marginLeft, width - marginRight]
     );
     const y = d3.scaleLinear(d3.extent(data), [height - marginBottom, marginTop]);
     const line = d3.line((d, i) => x(i), y);
+
     useEffect(() => void d3.select(gx.current).call(d3.axisBottom(x)), [gx, x]);
     useEffect(() => void d3.select(gy.current).call(d3.axisLeft(y)), [gy, y]);
+
     return (
         <svg width={width} height={height}>
             <g ref={gx} transform={`translate(0,${height - marginBottom})`}/>
@@ -29,10 +41,10 @@ export default function LinePlot({
             <path
                 fill="none"
                 stroke="currentColor"
-                stroke-width="1.5"
+                strokeWidth="2"
                 d={line(data)}
             />
-            <g fill="white" stroke="currentColor" stroke-width="1.5">
+            <g fill="white" stroke="currentColor" strokeWidth="1.5">
                 {data.map((d, i) => (
                     <circle key={i} cx={x(i)} cy={y(d)} r="2.5"/>
                 ))}
