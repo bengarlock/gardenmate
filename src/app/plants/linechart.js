@@ -2,7 +2,6 @@ import * as d3 from "d3";
 import {useRef, useEffect, useState} from "react";
 
 export default function LinePlot({
-                                     data = [1, 2, 3, 4],
                                      width = 640,
                                      height = 400,
                                      marginTop = 20,
@@ -20,15 +19,19 @@ export default function LinePlot({
             .catch(err => console.log(err))
     }, []);
 
+    const weatherCelsius = weatherData.map(record => Number(record.air_temperature))
+    const weatherDate = weatherData.map(record => record.created_at)
+
 
     const gx = useRef();
     const gy = useRef();
 
-    const x = d3.scaleLinear(
-        [0, data.length - 1],
-        [marginLeft, width - marginRight]
-    );
-    const y = d3.scaleLinear(d3.extent(data), [height - marginBottom, marginTop]);
+    const x = d3.scaleLinear([0, weatherDate.length - 1], [marginLeft, width - marginRight]);
+    const y = d3.scaleLinear(d3.extent(weatherCelsius), [height - marginBottom, marginTop]);
+
+    console.log(y)
+
+
     const line = d3.line((d, i) => x(i), y);
 
     useEffect(() => void d3.select(gx.current).call(d3.axisBottom(x)), [gx, x]);
@@ -42,10 +45,10 @@ export default function LinePlot({
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
-                d={line(data)}
+                d={line(weatherCelsius)}
             />
             <g fill="white" stroke="currentColor" strokeWidth="1.5">
-                {data.map((d, i) => (
+                {weatherCelsius.map((d, i) => (
                     <circle key={i} cx={x(i)} cy={y(d)} r="2.5"/>
                 ))}
             </g>
