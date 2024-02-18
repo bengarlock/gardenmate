@@ -29,9 +29,6 @@ export default function LinePlot({
     const x = d3.scaleLinear([0, weatherDate.length - 1], [marginLeft, width - marginRight]);
     const y = d3.scaleLinear(d3.extent(weatherCelsius), [height - marginBottom, marginTop]);
 
-    console.log(y)
-
-
     const line = d3.line((d, i) => x(i), y);
 
     useEffect(() => void d3.select(gx.current).call(d3.axisBottom(x)), [gx, x]);

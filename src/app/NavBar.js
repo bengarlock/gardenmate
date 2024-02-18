@@ -1,11 +1,23 @@
 'use client'
 import Link from 'next/link';
 import {usePathname} from 'next/navigation';
+import {useState} from "react";
 
 
 const NavBar = () => {
 
+    const [plantOptions, setPlantOptions] = useState(false)
+
+    const onClickHandler = (e) => {
+        console.log(e.target)
+        if (e.target.id === 'togglePlant') {
+            setPlantOptions(!plantOptions)
+        }
+    }
+
     const pathname = usePathname()
+
+    console.log(plantOptions)
 
     return (
         <div className="w-80 flex flex-col justify-start h-screen bg-gray-900 bg-opacity-75">
@@ -19,7 +31,21 @@ const NavBar = () => {
                 <div className={pathname === '/plants' ? "navbar-icon selected" : "navbar-icon"}>
                     Plants
                 </div>
+
+                {pathname === '/plants' ?
+
+                    <div className={"text-white"}>
+                        <ol>
+                            <li className={"navbar-sub-icon"}>Weather</li>
+                            <li className={"navbar-sub-icon"}>Pests</li>
+                            <li className={"navbar-sub-icon"}>Degree Days</li>
+                        </ol>
+                    </div>
+
+                    : null}
+
             </Link>
+
             <Link href={"/chickens"}>
                 <div className={pathname === '/chickens' ? "navbar-icon selected" : "navbar-icon"}>
                     Chickens
