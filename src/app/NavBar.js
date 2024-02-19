@@ -9,16 +9,12 @@ const NavBar = () => {
     const [plantOptions, setPlantOptions] = useState(false)
 
     const onClickHandler = (e) => {
-        console.log(e.target)
         if (e.target.id === 'togglePlant') {
             setPlantOptions(!plantOptions)
         }
     }
 
     const pathname = usePathname()
-
-    console.log(plantOptions)
-
     return (
         <div className="w-80 flex flex-col justify-start h-screen bg-gray-900 bg-opacity-75">
             <h1 className="w-full flex justify-center p-3 mb-11 text-amber-700">GardenMate</h1>
