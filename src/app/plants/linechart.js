@@ -19,15 +19,21 @@ export default function LinePlot({
             .catch(err => console.log(err))
     }, []);
 
-    const weatherCelsius = weatherData.map(record => Number(record.air_temperature))
-    const weatherDate = weatherData.map(record => record.created_at)
+    const weatherCelsius = weatherData.map(record => Number(record.air_temperature) * 9/5 + 32)
+    let weatherDates = weatherData.map(record => Date(record.created_at))
+    // console.log(weatherDates)
+
+    const dateObjects = weatherDates.map(date => d3.timeParse("%Y-%m-%d", date))
+    // console.log(dateObjects)
 
 
     const gx = useRef();
     const gy = useRef();
 
-    const x = d3.scaleLinear([0, weatherDate.length - 1], [marginLeft, width - marginRight]);
+    const x = d3.scaleLinear([0, weatherDates.length - 1], [marginLeft, width - marginRight]);
     const y = d3.scaleLinear(d3.extent(weatherCelsius), [height - marginBottom, marginTop]);
+
+    console.log(x.range)
 
     const line = d3.line((d, i) => x(i), y);
 
