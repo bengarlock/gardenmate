@@ -28,8 +28,6 @@ export default function LinePlot() {
             {
                 temps.map((t, tNdx) => <rect height="50px" width="50px" x={tNdx} y={dates}></rect>)
             }
-
-
         </svg>
 
     );
