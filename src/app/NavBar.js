@@ -28,13 +28,19 @@ const NavBar = () => {
                     Plants
                 </div>
 
-                {pathname === '/plants' ?
+                {pathname.includes('/plants') ?
 
                     <div className={"text-white"}>
                         <ol>
-                            <li className={"navbar-sub-icon"}>Weather</li>
-                            <li className={"navbar-sub-icon"}>Pests</li>
-                            <li className={"navbar-sub-icon"}>Degree Days</li>
+                            <Link href={"/plants/weather"}>
+                                <li className={"navbar-sub-icon"}>Weather</li>
+                            </Link>
+                            <Link href={"/plants/pests"}>
+                                <li className={"navbar-sub-icon"}>Pests</li>
+                            </Link>
+                            <Link href={"/plants/degreedays"}>
+                                <li className={"navbar-sub-icon"}>Degree Days</li>
+                            </Link>
                         </ol>
                     </div>
 
