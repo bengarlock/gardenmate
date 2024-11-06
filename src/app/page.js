@@ -10,13 +10,9 @@ export default function Home() {
             transform transition-transform duration-300 hover:scale-105">
                 <div className="p-10">
                     <h1>Weather</h1>
-                    <Weather/>
+                    <Weather />
                 </div>
             </div>
-
-
-
         </div>
-
     );
 }
