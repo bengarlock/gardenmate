@@ -15,6 +15,11 @@ const Weather = () => {
     const fetchWeather = () => {
         const myHeaders = new Headers();
         myHeaders.append("Content-Type", "application/json");
+        const csrfToken = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
+        if (csrfToken) {
+            myHeaders.append("X-CSRFToken", csrfToken.split('=')[1]);
+        }
+        myHeaders.append("Content-Type", "application/json");
 
         const raw = JSON.stringify({
             "request": "get_weather_data"
