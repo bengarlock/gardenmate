@@ -11,7 +11,6 @@ const Weather = () => {
         fetchWeather()
     }, []);
 
-
     const fetchWeather = () => {
         const myHeaders = new Headers();
         const csrfToken = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
@@ -38,14 +37,12 @@ const Weather = () => {
     }
 
     const renderWeather = () => {
-        if (currentWeather) {
-            const temp_f = (currentWeather.obs[0].air_temperature * 9/5) + 32
-            return Math.ceil(temp_f) + "\u00B0"
-        }
+        const temp_f = (currentWeather.obs[0].air_temperature * 9/5) + 32
+        return Math.ceil(temp_f) + "\u00B0" + " F"
     }
 
     return (
-        <div>{renderWeather()} F</div>
+        <div>{currentWeather ? renderWeather() : "Loading..."}</div>
     )
 }
 
