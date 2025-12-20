@@ -1,6 +1,6 @@
 'use client'
-import Weather from "@/app/plants/weather/page"
-import Countdown from "@/app/plants/countdown/page"
+import Weather from "@/app/components/Weather"
+import Countdown from "@/app/components/Countdown"
 
 export default function Home() {
     return (
