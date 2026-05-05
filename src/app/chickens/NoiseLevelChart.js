@@ -264,7 +264,8 @@ export default function NoiseLevelChart() {
             <svg
                 width={width}
                 height={height}
-                className="overflow-visible"
+                viewBox={`0 0 ${width} ${height}`}
+                className="block h-auto w-full overflow-visible"
                 role="img"
                 aria-label="Line chart of averaged noise level versus time of day"
             >
