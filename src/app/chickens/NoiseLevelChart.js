@@ -5,6 +5,9 @@ import { useEffect, useMemo, useState } from 'react'
 
 const NOISE_API = 'https://bengarlock.com/api/v1/garden/noise/'
 
+/** Poll interval for live updates */
+const REFRESH_MS = 60 * 1000
+
 /** Bin width for trend smoothing (local time) */
 const BIN_MS = 60 * 1000
 
@@ -96,25 +99,34 @@ export default function NoiseLevelChart() {
 
     useEffect(() => {
         let cancelled = false
-        fetch(NOISE_API)
-            .then((res) => {
-                if (!res.ok) throw new Error(`HTTP ${res.status}`)
-                return res.json()
-            })
-            .then((json) => {
-                if (!cancelled) {
-                    setPayload(json)
-                    setLoading(false)
-                }
-            })
-            .catch((e) => {
-                if (!cancelled) {
-                    setError(e.message ?? String(e))
-                    setLoading(false)
-                }
-            })
+
+        const fetchNoise = () => {
+            fetch(NOISE_API)
+                .then((res) => {
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                    return res.json()
+                })
+                .then((json) => {
+                    if (!cancelled) {
+                        setPayload(json)
+                        setError(null)
+                        setLoading(false)
+                    }
+                })
+                .catch((e) => {
+                    if (!cancelled) {
+                        setError(e.message ?? String(e))
+                        setLoading(false)
+                    }
+                })
+        }
+
+        fetchNoise()
+        const intervalId = setInterval(fetchNoise, REFRESH_MS)
+
         return () => {
             cancelled = true
+            clearInterval(intervalId)
         }
     }, [])
 
