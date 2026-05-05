@@ -60,7 +60,7 @@ function binAndAverage(rawPts, dayAnchor) {
     return bins
 }
 
-/** Snap hover to the nearest time bucket when within this many px on the x-axis */
+/** Snap hover to the nearest time bucket when within this many SVG units on the x-axis */
 const HOVER_SNAP_X_PX = 36
 
 export default function NoiseLevelChart() {
@@ -194,11 +194,8 @@ export default function NoiseLevelChart() {
     const xTickFormat = d3.timeFormat('%-I:%M %p')
 
     const handlePlotMouseMove = (e) => {
-        const svg = e.currentTarget.ownerSVGElement
-        if (!svg || series.length === 0) return
-        const b = svg.getBoundingClientRect()
-        const innerX = e.clientX - b.left - margin.left
-        const innerY = e.clientY - b.top - margin.top
+        if (series.length === 0) return
+        const [innerX, innerY] = d3.pointer(e, e.currentTarget)
         if (innerX < 0 || innerX > innerW || innerY < 0 || innerY > innerH) {
             setHoverIdx(null)
             return
@@ -316,6 +313,14 @@ export default function NoiseLevelChart() {
                                 stroke="#94a3b8"
                                 strokeDasharray="4 4"
                                 strokeOpacity={0.9}
+                            />
+                            <circle
+                                cx={xScale(series[hoverIdx].t)}
+                                cy={yScale(series[hoverIdx].y)}
+                                r={4}
+                                fill="#020617"
+                                stroke={LEVEL_COLORS[Math.round(series[hoverIdx].y)] ?? LEVEL_COLORS[1]}
+                                strokeWidth={2}
                             />
                             <g
                                 transform={`translate(${xScale(series[hoverIdx].t)}, ${yScale(series[hoverIdx].y) - 14})`}
