@@ -7,20 +7,21 @@ body {
     background-color: #848d85;
     background-image: url("media/background.jpg");
     background-size: cover;
+    background-position: center;
 
 }
 
 
 @layer components {
     .navbar-icon {
-        @apply flex flex-row justify-between text-xl w-full mb-5 p-3 text-white select-none hover:bg-amber-800 transition-all ease-in-out ;
+        @apply flex min-h-11 items-center justify-center rounded-md px-4 py-2 text-base text-white select-none transition-all ease-in-out hover:bg-amber-800 md:mb-5 md:w-full md:justify-between md:rounded-none md:p-3 md:text-xl;
     }
 
     .navbar-sub-icon {
-        @apply text-sm m-2 p-2 hover:bg-amber-600;
+        @apply rounded-md px-3 py-2 text-sm hover:bg-amber-600 md:m-2 md:block md:p-2;
     }
 
     .selected {
-        @apply bg-amber-500;
+        @apply bg-amber-500 text-gray-950 md:text-white;
     }
 }

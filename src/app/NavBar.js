@@ -1,23 +1,17 @@
 'use client'
 import Link from 'next/link';
 import {usePathname} from 'next/navigation';
-import {useState} from "react";
 
 
 const NavBar = () => {
 
-    const [plantOptions, setPlantOptions] = useState(false)
-
-    const onClickHandler = (e) => {
-        if (e.target.id === 'togglePlant') {
-            setPlantOptions(!plantOptions)
-        }
-    }
-
     const pathname = usePathname()
     return (
-        <div className="w-80 flex flex-col justify-start h-screen bg-gray-900 bg-opacity-75">
-            <h1 className="w-full flex justify-center p-3 mb-11 text-amber-700">GardenMate</h1>
+        <nav className="w-full bg-gray-900/85 text-white md:min-h-screen md:w-64 md:shrink-0 lg:w-80">
+            <h1 className="flex w-full justify-center p-3 text-xl font-semibold text-amber-600 md:mb-8">
+                GardenMate
+            </h1>
+            <div className="flex flex-wrap justify-center gap-2 px-2 pb-3 md:block md:px-0 md:pb-0">
             <Link href={"/"}>
                 <div className={pathname === '/' ? "navbar-icon selected" : "navbar-icon"}>
                     Home
@@ -27,11 +21,12 @@ const NavBar = () => {
                 <div className={pathname === '/plants' ? "navbar-icon selected" : "navbar-icon"}>
                     Plants
                 </div>
+            </Link>
 
                 {pathname.includes('/plants') ?
 
-                    <div className={"text-white"}>
-                        <ol>
+                    <div className={"w-full text-white md:w-auto"}>
+                        <ol className="flex flex-wrap justify-center gap-2 px-1 md:block md:px-0">
                             <Link href={"/plants/weather"}>
                                 <li className={"navbar-sub-icon"}>Weather</li>
                             </Link>
@@ -46,14 +41,13 @@ const NavBar = () => {
 
                     : null}
 
-            </Link>
-
             <Link href={"/chickens"}>
                 <div className={pathname === '/chickens' ? "navbar-icon selected" : "navbar-icon"}>
                     Chickens
                 </div>
             </Link>
-        </div>
+            </div>
+        </nav>
     )
 }
 
