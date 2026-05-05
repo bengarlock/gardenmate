@@ -21,6 +21,7 @@ const LEVEL_RANK = {
 
 /** Stroke colors by rank: Quiet → Moderate → Loud → Very Loud */
 const LEVEL_COLORS = ['#22c55e', '#eab308', '#ef4444', '#a855f7']
+const LEVEL_AXIS_RANKS = [0, 1, 2, 3]
 
 function rankForLevel(level) {
     const key = level ?? 'Unknown'
@@ -57,35 +58,6 @@ function binAndAverage(rawPts, dayAnchor) {
     }
     bins.sort((a, b) => a.t - b.t)
     return bins
-}
-
-function segmentStrokeColor(y0, y1) {
-    const mid = Math.round((y0 + y1) / 2)
-    return LEVEL_COLORS[Math.min(LEVEL_COLORS.length - 1, Math.max(0, mid))]
-}
-
-/** Split averaged series into contiguous runs by rounded level (for coloring). */
-function runsByRoundedRank(points) {
-    const runs = []
-    let cur = []
-    let rank = null
-    for (const p of points) {
-        const r = Math.min(LEVEL_COLORS.length - 1, Math.max(0, Math.round(p.y)))
-        if (rank === null) {
-            rank = r
-            cur.push(p)
-            continue
-        }
-        if (r === rank) {
-            cur.push(p)
-        } else {
-            runs.push({ rank, points: [...cur] })
-            cur = [p]
-            rank = r
-        }
-    }
-    if (cur.length) runs.push({ rank, points: cur })
-    return runs
 }
 
 /** Snap hover to the nearest time bucket when within this many px on the x-axis */
@@ -154,15 +126,11 @@ export default function NoiseLevelChart() {
         return binAndAverage(rawSeries, anchor)
     }, [rawSeries])
 
-    const coloredRuns = useMemo(() => runsByRoundedRank(series), [series])
-
     const margin = { top: 28, right: 28, bottom: 52, left: 96 }
     const width = 720
     const height = 340
     const innerW = width - margin.left - margin.right
     const innerH = height - margin.top - margin.bottom
-
-    const yAxisRanks = [0, 1, 2, 3]
 
     const yDomain = useMemo(() => {
         if (series.length === 0) return [-0.2, 3.2]
@@ -195,49 +163,33 @@ export default function NoiseLevelChart() {
         [yDomain, innerH]
     )
 
-    const lineGenerator = useMemo(
-        () =>
-            d3
-                .line()
-                .x((d) => xScale(d.t))
-                .y((d) => yScale(d.y))
-                .curve(d3.curveCatmullRom.alpha(0.65)),
-        [xScale, yScale]
-    )
+    /** One smooth curve through all bins — avoids kinks from segmented paths / straight connectors. */
+    const smoothLinePath = useMemo(() => {
+        if (series.length < 2) return null
+        return d3
+            .line()
+            .x((d) => xScale(d.t))
+            .y((d) => yScale(d.y))
+            .curve(d3.curveCatmullRom.alpha(0.92))(series)
+    }, [series, xScale, yScale])
 
-    const { runPaths, connectorPaths } = useMemo(() => {
-        const paths = coloredRuns.map((run, i) => {
-            const pts = run.points
-            if (pts.length >= 2) {
-                return {
-                    key: `run-${i}-${run.rank}`,
-                    d: lineGenerator(pts),
-                    stroke: LEVEL_COLORS[run.rank],
-                    kind: 'path',
-                }
-            }
-            const p = pts[0]
-            return {
-                key: `dot-${i}-${run.rank}`,
-                cx: xScale(p.t),
-                cy: yScale(p.y),
-                fill: LEVEL_COLORS[run.rank],
-                kind: 'dot',
-            }
-        })
-        const connectors = []
-        for (let j = 0; j < coloredRuns.length - 1; j++) {
-            const a = coloredRuns[j].points[coloredRuns[j].points.length - 1]
-            const b = coloredRuns[j + 1].points[0]
-            const d = `M${xScale(a.t)},${yScale(a.y)}L${xScale(b.t)},${yScale(b.y)}`
-            connectors.push({
-                key: `conn-${j}`,
-                d,
-                stroke: segmentStrokeColor(a.y, b.y),
-            })
-        }
-        return { runPaths: paths, connectorPaths: connectors }
-    }, [coloredRuns, lineGenerator, xScale, yScale])
+    /**
+     * Vertical level-based stroke: the same y-value gets the same color everywhere on the
+     * chart, avoiding horizontal bands that bunch up when samples are unevenly spaced.
+     */
+    const strokeGradientStops = useMemo(() => {
+        const clampPct = (v) => Math.min(100, Math.max(0, v))
+        const offsetForRank = (rank) => clampPct(((innerH - yScale(rank)) / innerH) * 100)
+
+        return [
+            { offset: '0%', color: LEVEL_COLORS[0] },
+            ...LEVEL_AXIS_RANKS.map((rank) => ({
+                offset: `${offsetForRank(rank)}%`,
+                color: LEVEL_COLORS[rank],
+            })),
+            { offset: '100%', color: LEVEL_COLORS[LEVEL_COLORS.length - 1] },
+        ]
+    }, [innerH, yScale])
 
     const xTickFormat = d3.timeFormat('%-I:%M %p')
 
@@ -317,7 +269,21 @@ export default function NoiseLevelChart() {
                 aria-label="Line chart of averaged noise level versus time of day"
             >
                 <g transform={`translate(${margin.left},${margin.top})`}>
-                    {yAxisRanks.map((rk) => (
+                    <defs>
+                        <linearGradient
+                            id="noiseLineStroke"
+                            gradientUnits="userSpaceOnUse"
+                            x1={0}
+                            y1={innerH}
+                            x2={0}
+                            y2={0}
+                        >
+                            {strokeGradientStops.map((s, i) => (
+                                <stop key={i} offset={s.offset} stopColor={s.color} />
+                            ))}
+                        </linearGradient>
+                    </defs>
+                    {LEVEL_AXIS_RANKS.map((rk) => (
                         <line
                             key={`grid-${rk}`}
                             x1={0}
@@ -329,36 +295,15 @@ export default function NoiseLevelChart() {
                             strokeOpacity={0.85}
                         />
                     ))}
-                    {connectorPaths.map((c) => (
+                    {smoothLinePath && (
                         <path
-                            key={c.key}
-                            d={c.d}
+                            d={smoothLinePath}
                             fill="none"
-                            stroke={c.stroke}
-                            strokeWidth={2.25}
+                            stroke="url(#noiseLineStroke)"
+                            strokeWidth={2.75}
                             strokeLinecap="round"
+                            strokeLinejoin="round"
                         />
-                    ))}
-                    {runPaths.map((item) =>
-                        item.kind === 'path' ? (
-                            <path
-                                key={item.key}
-                                d={item.d}
-                                fill="none"
-                                stroke={item.stroke}
-                                strokeWidth={2.25}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
-                        ) : (
-                            <circle
-                                key={item.key}
-                                cx={item.cx}
-                                cy={item.cy}
-                                r={5}
-                                fill={item.fill}
-                            />
-                        )
                     )}
                     {hoverIdx != null && series[hoverIdx] && (
                         <g pointerEvents="none">
@@ -370,14 +315,6 @@ export default function NoiseLevelChart() {
                                 stroke="#94a3b8"
                                 strokeDasharray="4 4"
                                 strokeOpacity={0.9}
-                            />
-                            <circle
-                                cx={xScale(series[hoverIdx].t)}
-                                cy={yScale(series[hoverIdx].y)}
-                                r={6}
-                                fill="#0f172a"
-                                stroke="#f8fafc"
-                                strokeWidth={2}
                             />
                             <g
                                 transform={`translate(${xScale(series[hoverIdx].t)}, ${yScale(series[hoverIdx].y) - 14})`}
@@ -400,7 +337,7 @@ export default function NoiseLevelChart() {
                                     fontSize={12}
                                     fontWeight={600}
                                 >
-                                    {' '}
+                                    RMS{' '}
                                     {series[hoverIdx].rms != null && Number.isFinite(series[hoverIdx].rms)
                                         ? `${Number(series[hoverIdx].rms).toFixed(2)} dB`
                                         : '—'}
@@ -427,7 +364,7 @@ export default function NoiseLevelChart() {
                         onMouseMove={handlePlotMouseMove}
                         onMouseLeave={handlePlotMouseLeave}
                     />
-                    {yAxisRanks.map((rk) => (
+                    {LEVEL_AXIS_RANKS.map((rk) => (
                         <text
                             key={`yt-${rk}`}
                             x={-12}
