@@ -9,7 +9,7 @@ const NOISE_API = 'https://bengarlock.com/api/v1/garden/noise/'
 const REFRESH_MS = 60 * 1000
 
 /** Bin width for trend smoothing (local time) */
-const BIN_MS = 60 * 1000
+const BIN_MS = 1 * 60 * 1000
 
 /** Low → high intensity */
 const LEVEL_RANK = {
