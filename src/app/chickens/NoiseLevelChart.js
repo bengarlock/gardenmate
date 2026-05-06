@@ -14,6 +14,9 @@ const BIN_MINUTES = 5
 /** Bar fill gradient: quiet (low dB / more negative) → loud */
 const LEVEL_COLORS = ['#22c55e', '#eab308', '#ef4444', '#a855f7']
 
+/** Push the first color breaks ~5% toward the top of the bar so the green band occupies more vertical space. */
+const GRADIENT_GREEN_LIFT_PCT = 10
+
 function dayStartLocal(d) {
     const x = new Date(d)
     x.setHours(0, 0, 0, 0)
@@ -284,8 +287,14 @@ export default function NoiseLevelChart() {
 
         return [
             { offset: '0%', color: LEVEL_COLORS[0] },
-            { offset: `${offsetForRms(d0 + span * 0.33)}%`, color: LEVEL_COLORS[1] },
-            { offset: `${offsetForRms(d0 + span * 0.66)}%`, color: LEVEL_COLORS[2] },
+            {
+                offset: `${clampPct(offsetForRms(d0 + span * 0.33) + GRADIENT_GREEN_LIFT_PCT)}%`,
+                color: LEVEL_COLORS[1],
+            },
+            {
+                offset: `${clampPct(offsetForRms(d0 + span * 0.66) + GRADIENT_GREEN_LIFT_PCT)}%`,
+                color: LEVEL_COLORS[2],
+            },
             { offset: '100%', color: LEVEL_COLORS[3] },
         ]
     }, [innerH, yScale])
