@@ -1,35 +1,18 @@
 'use client'
 
 import * as d3 from 'd3'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const NOISE_API = 'https://bengarlock.com/api/v1/garden/noise/'
 
 /** Poll interval for live updates */
 const REFRESH_MS = 60 * 1000
 
-/** Bin width for trend smoothing (local time) */
-const BIN_MS = 1 * 60 * 1000
+/** Fixed backend aggregation window — drives `bin_minutes` query and bar width. */
+const BIN_MINUTES = 5
 
-/** Low → high intensity */
-const LEVEL_RANK = {
-    Quiet: 0,
-    Moderate: 1,
-    Loud: 2,
-    'Very Loud': 3,
-}
-
-/** Stroke colors by rank: Quiet → Moderate → Loud → Very Loud */
+/** Bar fill gradient: quiet (low dB / more negative) → loud */
 const LEVEL_COLORS = ['#22c55e', '#eab308', '#ef4444', '#a855f7']
-const LEVEL_AXIS_RANKS = [0, 1, 2, 3]
-
-function rankForLevel(level) {
-    const key = level ?? 'Unknown'
-    if (Object.prototype.hasOwnProperty.call(LEVEL_RANK, key)) {
-        return LEVEL_RANK[key]
-    }
-    return 1
-}
 
 function dayStartLocal(d) {
     const x = new Date(d)
@@ -37,28 +20,71 @@ function dayStartLocal(d) {
     return x
 }
 
-function labelForRank(rk) {
-    const entry = Object.entries(LEVEL_RANK).find(([, v]) => v === rk)
-    return entry ? entry[0] : String(rk)
+/** UTC instant as `YYYY-MM-DDTHH:mm:ssZ` (matches binned API query examples). */
+function formatUtcISOZ(d) {
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}Z`
 }
 
-function binAndAverage(rawPts, dayAnchor) {
-    if (rawPts.length === 0) return []
-    const groups = d3.group(rawPts, (d) =>
-        Math.floor((d.t.getTime() - dayAnchor.getTime()) / BIN_MS)
-    )
-    const bins = []
-    for (const [binKey, pts] of groups) {
-        const ys = pts.map((p) => p.y)
-        const meanY = d3.mean(ys) ?? 0
-        const rmsVals = pts.map((p) => p.rms).filter((v) => v != null && Number.isFinite(v))
-        const meanRms = rmsVals.length ? d3.mean(rmsVals) : null
-        const tMid = new Date(dayAnchor.getTime() + (Number(binKey) + 0.5) * BIN_MS)
-        bins.push({ t: tMid, y: meanY, n: pts.length, rms: meanRms })
-    }
-    bins.sort((a, b) => a.t - b.t)
-    return bins
+function buildNoiseUrl(start, end) {
+    const q = new URLSearchParams({
+        start: formatUtcISOZ(start),
+        end: formatUtcISOZ(end),
+        bin_minutes: String(BIN_MINUTES),
+    })
+    return `${NOISE_API}?${q.toString()}`
 }
+
+/** `datetime-local` value in local time (`YYYY-MM-DDTHH:mm`). */
+function toDatetimeLocalValue(d) {
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** Parse `datetime-local` string to a local Date (seconds default to 0). */
+function fromDatetimeLocalValue(s) {
+    if (!s || typeof s !== 'string') return null
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/)
+    if (!m) return null
+    const y = Number(m[1])
+    const mo = Number(m[2])
+    const d = Number(m[3])
+    const hh = Number(m[4])
+    const mm = Number(m[5])
+    const ss = m[6] != null ? Number(m[6]) : 0
+    const dt = new Date(y, mo - 1, d, hh, mm, ss, 0)
+    return Number.isNaN(dt.getTime()) ? null : dt
+}
+
+/** Presets; `getRange()` is called on each fetch so `end` stays current for polling. */
+const PRESETS = [
+    {
+        id: 'today',
+        label: 'Today',
+        getRange: () => {
+            const end = new Date()
+            return { start: dayStartLocal(end), end }
+        },
+    },
+    {
+        id: '24h',
+        label: '24 hours',
+        getRange: () => {
+            const end = new Date()
+            return { start: new Date(end.getTime() - 24 * 60 * 60 * 1000), end }
+        },
+    },
+    {
+        id: '7d',
+        label: '7 days',
+        getRange: () => {
+            const end = new Date()
+            return { start: new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000), end }
+        },
+    },
+]
+
+const TIMEFRAME_OPTIONS = [...PRESETS, { id: 'custom', label: 'Custom' }]
 
 /** Snap hover to the nearest time bucket when within this many SVG units on the x-axis */
 const HOVER_SNAP_X_PX = 36
@@ -66,14 +92,45 @@ const HOVER_SNAP_X_PX = 36
 export default function NoiseLevelChart() {
     const [payload, setPayload] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [isRefreshing, setIsRefreshing] = useState(false)
     const [error, setError] = useState(null)
     const [hoverIdx, setHoverIdx] = useState(null)
+    const [timeframe, setTimeframe] = useState('today')
+    const [customStartInput, setCustomStartInput] = useState('')
+    const [customEndInput, setCustomEndInput] = useState('')
+    const [customApplied, setCustomApplied] = useState({ start: '', end: '' })
+    const [rangeValidationError, setRangeValidationError] = useState(null)
+    const firstFetchEverRef = useRef(true)
 
     useEffect(() => {
         let cancelled = false
 
         const fetchNoise = () => {
-            fetch(NOISE_API)
+            let start
+            let end
+
+            if (timeframe === 'custom') {
+                if (!customApplied.start || !customApplied.end) {
+                    return
+                }
+                start = fromDatetimeLocalValue(customApplied.start)
+                end = fromDatetimeLocalValue(customApplied.end)
+                if (!start || !end || start.getTime() >= end.getTime()) {
+                    return
+                }
+            } else {
+                const preset = PRESETS.find((t) => t.id === timeframe)
+                if (!preset) return
+                ;({ start, end } = preset.getRange())
+            }
+
+            const isFirstEver = firstFetchEverRef.current
+            if (isFirstEver) setLoading(true)
+            else setIsRefreshing(true)
+
+            const url = buildNoiseUrl(start, end)
+
+            fetch(url)
                 .then((res) => {
                     if (!res.ok) throw new Error(`HTTP ${res.status}`)
                     return res.json()
@@ -82,13 +139,18 @@ export default function NoiseLevelChart() {
                     if (!cancelled) {
                         setPayload(json)
                         setError(null)
-                        setLoading(false)
+                        firstFetchEverRef.current = false
                     }
                 })
                 .catch((e) => {
                     if (!cancelled) {
                         setError(e.message ?? String(e))
+                    }
+                })
+                .finally(() => {
+                    if (!cancelled) {
                         setLoading(false)
+                        setIsRefreshing(false)
                     }
                 })
         }
@@ -100,45 +162,84 @@ export default function NoiseLevelChart() {
             cancelled = true
             clearInterval(intervalId)
         }
-    }, [])
-
-    const rows = payload?.results ?? []
+    }, [timeframe, customApplied.start, customApplied.end])
 
     const rawSeries = useMemo(() => {
+        if (!payload) return []
+
+        const bins = payload.bins
+        if (Array.isArray(bins) && bins.length > 0) {
+            const pts = bins
+                .map((b) => {
+                    const tStart = new Date(b.bin_start)
+                    const tEnd = new Date(b.bin_end)
+                    if (Number.isNaN(tStart.getTime()) || Number.isNaN(tEnd.getTime())) return null
+                    const t = new Date((tStart.getTime() + tEnd.getTime()) / 2)
+                    const rmsRaw = b.rms != null && b.rms !== '' ? Number(b.rms) : NaN
+                    if (!Number.isFinite(rmsRaw)) return null
+                    const nRaw = b.count
+                    const n =
+                        typeof nRaw === 'number' && Number.isFinite(nRaw)
+                            ? nRaw
+                            : Number(nRaw) || 1
+                    return {
+                        t,
+                        y: rmsRaw,
+                        rms: rmsRaw,
+                        level: b.level ?? null,
+                        n,
+                    }
+                })
+                .filter(Boolean)
+            pts.sort((a, b) => a.t - b.t)
+            return pts
+        }
+
+        const rows = payload.results ?? []
         const pts = rows
             .map((row) => {
                 const t = new Date(row.timestamp)
                 if (Number.isNaN(t.getTime())) return null
-                const level = row.level ?? 'Unknown'
-                const y = rankForLevel(level)
                 const rmsRaw = row.rms != null && row.rms !== '' ? Number(row.rms) : NaN
-                const rms = Number.isFinite(rmsRaw) ? rmsRaw : null
-                return { t, y, level, rms }
+                if (!Number.isFinite(rmsRaw)) return null
+                return {
+                    t,
+                    y: rmsRaw,
+                    rms: rmsRaw,
+                    level: row.level ?? null,
+                    n: 1,
+                }
             })
             .filter(Boolean)
         pts.sort((a, b) => a.t - b.t)
         return pts
-    }, [rows])
+    }, [payload])
 
+    /** One bar per row; `y` is RMS (dB). */
     const series = useMemo(() => {
         if (rawSeries.length === 0) return []
-        const anchor = dayStartLocal(rawSeries[0].t)
-        return binAndAverage(rawSeries, anchor)
+        return rawSeries.map((p) => ({
+            t: p.t,
+            y: p.y,
+            n: p.n ?? 1,
+            rms: p.rms,
+            level: p.level,
+        }))
     }, [rawSeries])
 
-    const margin = { top: 28, right: 28, bottom: 52, left: 96 }
+    const margin = { top: 28, right: 28, bottom: 52, left: 108 }
     const width = 720
     const height = 340
     const innerW = width - margin.left - margin.right
     const innerH = height - margin.top - margin.bottom
 
     const yDomain = useMemo(() => {
-        if (series.length === 0) return [-0.2, 3.2]
+        if (series.length === 0) return [-55, -15]
         const ys = series.map((d) => d.y)
-        const lo = Math.min(d3.min(ys) ?? 0, 0)
-        const hi = Math.max(d3.max(ys) ?? 3, 3)
-        const span = hi - lo
-        const pad = Math.max(0.15, span * 0.08)
+        const lo = d3.min(ys) ?? -55
+        const hi = d3.max(ys) ?? -15
+        const span = hi - lo || 1
+        const pad = Math.max(2, span * 0.08)
         return [lo - pad, hi + pad]
     }, [series])
 
@@ -147,7 +248,7 @@ export default function NoiseLevelChart() {
         const t0 = series[0].t
         const t1 = series[series.length - 1].t
         if (t0.getTime() === t1.getTime()) {
-            const padMs = BIN_MS / 2
+            const padMs = (BIN_MINUTES * 60 * 1000) / 2
             return [new Date(t0.getTime() - padMs), new Date(t1.getTime() + padMs)]
         }
         return [t0, t1]
@@ -163,35 +264,50 @@ export default function NoiseLevelChart() {
         [yDomain, innerH]
     )
 
-    /** One smooth curve through all bins — avoids kinks from segmented paths / straight connectors. */
-    const smoothLinePath = useMemo(() => {
-        if (series.length < 2) return null
-        return d3
-            .line()
-            .x((d) => xScale(d.t))
-            .y((d) => yScale(d.y))
-            .curve(d3.curveCatmullRom.alpha(0.92))(series)
-    }, [series, xScale, yScale])
+    /** Pixel width of one time bin (bars are centered on each sample time). */
+    const barWidthPx = useMemo(() => {
+        if (series.length === 0) return 8
+        const t0 = series[0].t.getTime()
+        const binMs = BIN_MINUTES * 60 * 1000
+        return Math.max(4, Math.abs(xScale(new Date(t0 + binMs)) - xScale(new Date(t0))))
+    }, [series, xScale])
 
-    /**
-     * Vertical level-based stroke: the same y-value gets the same color everywhere on the
-     * chart, avoiding horizontal bands that bunch up when samples are unevenly spaced.
-     */
-    const strokeGradientStops = useMemo(() => {
+    /** Bottom of plot area (matches `nice()`-rounded y domain). */
+    const yBaseline = yScale(yScale.domain()[0])
+
+    /** Vertical gradient: quieter RMS (bottom) → louder RMS (top), keyed to y-scale domain. */
+    const noiseGradientStops = useMemo(() => {
+        const [d0, d1] = yScale.domain()
+        const span = d1 - d0 || 1e-6
         const clampPct = (v) => Math.min(100, Math.max(0, v))
-        const offsetForRank = (rank) => clampPct(((innerH - yScale(rank)) / innerH) * 100)
+        const offsetForRms = (rms) => clampPct(((innerH - yScale(rms)) / innerH) * 100)
 
         return [
             { offset: '0%', color: LEVEL_COLORS[0] },
-            ...LEVEL_AXIS_RANKS.map((rank) => ({
-                offset: `${offsetForRank(rank)}%`,
-                color: LEVEL_COLORS[rank],
-            })),
-            { offset: '100%', color: LEVEL_COLORS[LEVEL_COLORS.length - 1] },
+            { offset: `${offsetForRms(d0 + span * 0.33)}%`, color: LEVEL_COLORS[1] },
+            { offset: `${offsetForRms(d0 + span * 0.66)}%`, color: LEVEL_COLORS[2] },
+            { offset: '100%', color: LEVEL_COLORS[3] },
         ]
     }, [innerH, yScale])
 
-    const xTickFormat = d3.timeFormat('%-I:%M %p')
+    const xDomainSpanMs = useMemo(
+        () => Math.max(0, xDomain[1].getTime() - xDomain[0].getTime()),
+        [xDomain]
+    )
+
+    const xTickFormatFn = useMemo(() => {
+        if (xDomainSpanMs > 48 * 60 * 60 * 1000) {
+            return d3.timeFormat('%b %-d %-I %p')
+        }
+        if (xDomainSpanMs > 24 * 60 * 60 * 1000) {
+            return d3.timeFormat('%b %-d · %-I:%M %p')
+        }
+        return d3.timeFormat('%-I:%M %p')
+    }, [xDomainSpanMs])
+
+    const xAxisLabel = xDomainSpanMs > 24 * 60 * 60 * 1000 ? 'Date & time' : 'Time of day'
+
+    const formatDbTick = (v) => `${d3.format('.1f')(v)} dB`
 
     const handlePlotMouseMove = (e) => {
         if (series.length === 0) return
@@ -214,95 +330,242 @@ export default function NoiseLevelChart() {
 
     const handlePlotMouseLeave = () => setHoverIdx(null)
 
-    if (loading) {
+    const seedCustomRangeFromNow = () => {
+        const end = new Date()
+        const startStr = toDatetimeLocalValue(dayStartLocal(end))
+        const endStr = toDatetimeLocalValue(end)
+        setCustomStartInput(startStr)
+        setCustomEndInput(endStr)
+        setCustomApplied({ start: startStr, end: endStr })
+    }
+
+    const handleApplyCustom = () => {
+        if (!customStartInput || !customEndInput) {
+            setRangeValidationError('Choose both start and end.')
+            return
+        }
+        const start = fromDatetimeLocalValue(customStartInput)
+        const end = fromDatetimeLocalValue(customEndInput)
+        if (!start || !end) {
+            setRangeValidationError('Invalid date or time.')
+            return
+        }
+        if (start.getTime() >= end.getTime()) {
+            setRangeValidationError('Start must be before end.')
+            return
+        }
+        setRangeValidationError(null)
+        setError(null)
+        setCustomApplied({ start: customStartInput, end: customEndInput })
+    }
+
+    const handleTimeframeClick = (tfId) => {
+        setError(null)
+        if (tfId === 'custom') {
+            seedCustomRangeFromNow()
+            setRangeValidationError(null)
+            setTimeframe('custom')
+            return
+        }
+        setTimeframe(tfId)
+    }
+
+    const datetimeLocalInputClass =
+        'mt-1 min-h-[42px] w-full min-w-[11rem] rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 shadow-inner focus:border-amber-500/70 focus:outline-none focus:ring-2 focus:ring-amber-400/50 sm:w-auto'
+
+    const timeframeControls = (
+        <div
+            className="mb-4 flex flex-wrap gap-2"
+            role="group"
+            aria-label="Time range for noise data"
+        >
+            {TIMEFRAME_OPTIONS.map((tf) => (
+                <button
+                    key={tf.id}
+                    type="button"
+                    onClick={() => handleTimeframeClick(tf.id)}
+                    aria-pressed={timeframe === tf.id}
+                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 ${
+                        timeframe === tf.id
+                            ? 'bg-amber-500/90 text-slate-900 shadow-sm'
+                            : 'bg-slate-700/80 text-slate-200 hover:bg-slate-600/90'
+                    }`}
+                >
+                    {tf.label}
+                </button>
+            ))}
+        </div>
+    )
+
+    const customRangePickers =
+        timeframe === 'custom' ? (
+            <div className="mb-4 flex flex-col gap-3 border-t border-slate-700/80 pt-4 sm:flex-row sm:flex-wrap sm:items-end">
+                <label className="flex min-w-[11rem] flex-1 flex-col text-sm text-slate-300">
+                    Start
+                    <input
+                        type="datetime-local"
+                        value={customStartInput}
+                        onChange={(e) => setCustomStartInput(e.target.value)}
+                        className={datetimeLocalInputClass}
+                        aria-invalid={rangeValidationError ? true : undefined}
+                    />
+                </label>
+                <label className="flex min-w-[11rem] flex-1 flex-col text-sm text-slate-300">
+                    End
+                    <input
+                        type="datetime-local"
+                        value={customEndInput}
+                        onChange={(e) => setCustomEndInput(e.target.value)}
+                        className={datetimeLocalInputClass}
+                    />
+                </label>
+                <button
+                    type="button"
+                    onClick={handleApplyCustom}
+                    className="mb-1 rounded-lg bg-amber-500/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition-colors hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 sm:shrink-0"
+                >
+                    Apply range
+                </button>
+                {rangeValidationError && (
+                    <p className="basis-full text-sm text-red-300" role="alert">
+                        {rangeValidationError}
+                    </p>
+                )}
+                <p className="basis-full text-xs text-slate-500">
+                    Times use your device&apos;s local timezone. Polling repeats this same window.
+                </p>
+            </div>
+        ) : null
+
+    if (loading && !payload) {
         return (
-            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 text-slate-300 shadow-xl">
-                Loading noise levels…
+            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
+                <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
+                    Noise Level
+                </h2>
+                {timeframeControls}
+                {customRangePickers}
+                <p className="text-slate-300">Loading noise levels…</p>
             </div>
         )
     }
 
-    if (error) {
+    if (error && !payload) {
         return (
-            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 text-red-300 shadow-xl">
-                Could not load noise data: {error}
+            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
+                <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
+                    Noise Level
+                </h2>
+                {timeframeControls}
+                {customRangePickers}
+                <p className="text-red-300">Could not load noise data: {error}</p>
             </div>
         )
     }
 
     if (rawSeries.length === 0) {
         return (
-            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 text-slate-400 shadow-xl">
-                No noise readings in this response.
-            </div>
-        )
-    }
-
-    if (series.length === 0) {
-        return (
-            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 text-slate-400 shadow-xl">
-                Could not build averages from readings.
+            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
+                <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
+                    Noise Level
+                </h2>
+                {timeframeControls}
+                {customRangePickers}
+                <p className="text-slate-400">No RMS readings in this response.</p>
             </div>
         )
     }
 
     const sampleNote =
-        payload?.count != null ? `${payload.count} samples` : `${rows.length} samples`
+        Array.isArray(payload?.bins) && payload.bins.length > 0
+            ? `${payload.bin_count != null ? payload.bin_count : payload.bins.length} bins`
+            : payload?.count != null
+              ? `${payload.count} samples`
+              : `${(payload?.results ?? []).length} samples`
 
     return (
         <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
             <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
                 Noise Level
             </h2>
+            {timeframeControls}
+            {customRangePickers}
+            {error && payload && (
+                <p className="mb-3 text-sm text-red-300">Could not refresh noise data: {error}</p>
+            )}
             <p className="mb-4 text-sm text-slate-400">
                 {payload?.date ? `${payload.date} · ` : ''}
                 {sampleNote}
+                {` · ${BIN_MINUTES}-minute bins`}
             </p>
-            <svg
+            <div className="relative">
+                {isRefreshing && (
+                    <div
+                        className="pointer-events-none absolute inset-0 z-10 flex items-start justify-end rounded-lg pt-2 pr-2"
+                        aria-live="polite"
+                    >
+                        <span className="rounded-md bg-slate-900/85 px-2 py-1 text-xs text-slate-200 shadow">
+                            Updating…
+                        </span>
+                    </div>
+                )}
+                <svg
                 width={width}
                 height={height}
                 viewBox={`0 0 ${width} ${height}`}
                 className="block h-auto w-full overflow-visible"
                 role="img"
-                aria-label="Line chart of averaged noise level versus time of day"
+                aria-label="Bar chart of RMS noise in dB versus time of day"
             >
                 <g transform={`translate(${margin.left},${margin.top})`}>
                     <defs>
                         <linearGradient
-                            id="noiseLineStroke"
+                            id="noiseBarFill"
                             gradientUnits="userSpaceOnUse"
                             x1={0}
                             y1={innerH}
                             x2={0}
                             y2={0}
                         >
-                            {strokeGradientStops.map((s, i) => (
+                            {noiseGradientStops.map((s, i) => (
                                 <stop key={i} offset={s.offset} stopColor={s.color} />
                             ))}
                         </linearGradient>
                     </defs>
-                    {LEVEL_AXIS_RANKS.map((rk) => (
+                    {yScale.ticks(6).map((tick) => (
                         <line
-                            key={`grid-${rk}`}
+                            key={`grid-${tick}`}
                             x1={0}
                             x2={innerW}
-                            y1={yScale(rk)}
-                            y2={yScale(rk)}
+                            y1={yScale(tick)}
+                            y2={yScale(tick)}
                             stroke="#334155"
                             strokeDasharray="4 6"
                             strokeOpacity={0.85}
                         />
                     ))}
-                    {smoothLinePath && (
-                        <path
-                            d={smoothLinePath}
-                            fill="none"
-                            stroke="url(#noiseLineStroke)"
-                            strokeWidth={2.75}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                        />
-                    )}
+                    {series.map((d, i) => {
+                        const cx = xScale(d.t)
+                        const x = cx - barWidthPx / 2
+                        const yTop = yScale(d.y)
+                        const h = Math.max(0, yBaseline - yTop)
+                        const dimmed = hoverIdx != null && hoverIdx !== i
+                        return (
+                            <rect
+                                key={`bar-${i}`}
+                                x={x}
+                                y={yTop}
+                                width={barWidthPx}
+                                height={h}
+                                fill="url(#noiseBarFill)"
+                                rx={2}
+                                opacity={dimmed ? 0.38 : 0.92}
+                                stroke={hoverIdx === i ? '#f8fafc' : '#0f172a'}
+                                strokeWidth={hoverIdx === i ? 1.5 : 0.5}
+                                strokeOpacity={hoverIdx === i ? 1 : 0.35}
+                            />
+                        )
+                    })}
                     {hoverIdx != null && series[hoverIdx] && (
                         <g pointerEvents="none">
                             <line
@@ -313,14 +576,6 @@ export default function NoiseLevelChart() {
                                 stroke="#94a3b8"
                                 strokeDasharray="4 4"
                                 strokeOpacity={0.9}
-                            />
-                            <circle
-                                cx={xScale(series[hoverIdx].t)}
-                                cy={yScale(series[hoverIdx].y)}
-                                r={4}
-                                fill="#020617"
-                                stroke={LEVEL_COLORS[Math.round(series[hoverIdx].y)] ?? LEVEL_COLORS[1]}
-                                strokeWidth={2}
                             />
                             <g
                                 transform={`translate(${xScale(series[hoverIdx].t)}, ${yScale(series[hoverIdx].y) - 14})`}
@@ -355,7 +610,7 @@ export default function NoiseLevelChart() {
                                     fill="#94a3b8"
                                     fontSize={10}
                                 >
-                                    {xTickFormat(series[hoverIdx].t)}
+                                    {xTickFormatFn(series[hoverIdx].t)}
                                 </text>
                             </g>
                         </g>
@@ -370,24 +625,24 @@ export default function NoiseLevelChart() {
                         onMouseMove={handlePlotMouseMove}
                         onMouseLeave={handlePlotMouseLeave}
                     />
-                    {LEVEL_AXIS_RANKS.map((rk) => (
+                    {yScale.ticks(6).map((tick) => (
                         <text
-                            key={`yt-${rk}`}
+                            key={`yt-${tick}`}
                             x={-12}
-                            y={yScale(rk)}
+                            y={yScale(tick)}
                             dy="0.35em"
                             textAnchor="end"
                             fill="#cbd5e1"
-                            fontSize={13}
+                            fontSize={12}
                         >
-                            {labelForRank(rk)}
+                            {formatDbTick(tick)}
                         </text>
                     ))}
                     {xScale.ticks(6).map((t, i) => (
                         <g key={i} transform={`translate(${xScale(t)},${innerH})`}>
                             <line y1={0} y2={6} stroke="#64748b" />
                             <text y={22} textAnchor="middle" fill="#94a3b8" fontSize={11}>
-                                {xTickFormat(t)}
+                                {xTickFormatFn(t)}
                             </text>
                         </g>
                     ))}
@@ -398,10 +653,11 @@ export default function NoiseLevelChart() {
                         fill="#94a3b8"
                         fontSize={12}
                     >
-                        Time of day
+                        {xAxisLabel}
                     </text>
                 </g>
             </svg>
+            </div>
         </div>
     )
 }
