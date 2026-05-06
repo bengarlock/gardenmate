@@ -558,7 +558,6 @@ export default function NoiseLevelChart() {
                         const x = cx - barWidthPx / 2
                         const yTop = yScale(d.y)
                         const h = Math.max(0, yBaseline - yTop)
-                        const dimmed = hoverIdx != null && hoverIdx !== i
                         return (
                             <rect
                                 key={`bar-${i}`}
@@ -568,7 +567,7 @@ export default function NoiseLevelChart() {
                                 height={h}
                                 fill="url(#noiseBarFill)"
                                 rx={2}
-                                opacity={dimmed ? 0.38 : 0.92}
+                                opacity={0.92}
                                 stroke={hoverIdx === i ? '#f8fafc' : '#0f172a'}
                                 strokeWidth={hoverIdx === i ? 1.5 : 0.5}
                                 strokeOpacity={hoverIdx === i ? 1 : 0.35}
