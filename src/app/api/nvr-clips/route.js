@@ -5,13 +5,6 @@ const CLIP_API_URL =
 const GARDEN_API_TOKEN = process.env.GARDEN_API_TOKEN || ''
 
 export async function POST(request) {
-    if (!GARDEN_API_TOKEN) {
-        return NextResponse.json(
-            { message: 'GARDEN_API_TOKEN is not configured.' },
-            { status: 500 }
-        )
-    }
-
     let payload
     try {
         payload = await request.json()
@@ -23,7 +16,7 @@ export async function POST(request) {
         method: 'POST',
         headers: {
             Accept: 'application/json',
-            Authorization: `Token ${GARDEN_API_TOKEN}`,
+            ...(GARDEN_API_TOKEN ? { Authorization: `Token ${GARDEN_API_TOKEN}` } : {}),
             'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
