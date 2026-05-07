@@ -4,6 +4,10 @@ import * as d3 from 'd3'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 const NOISE_API = 'https://bengarlock.com/api/v1/garden/noise/'
+const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
+const NVR_CLIPS_API = `${APP_BASE_PATH}/api/nvr-clips`
+const DEFAULT_CAMERA_ID =
+    process.env.NEXT_PUBLIC_GARDEN_CAMERA_ID || '677930230377fe03e4001fa9'
 
 /** Poll interval for live updates */
 const REFRESH_MS = 60 * 1000
@@ -103,7 +107,17 @@ export default function NoiseLevelChart() {
     const [customEndInput, setCustomEndInput] = useState('')
     const [customApplied, setCustomApplied] = useState({ start: '', end: '' })
     const [rangeValidationError, setRangeValidationError] = useState(null)
+    const [clipPanel, setClipPanel] = useState(null)
     const firstFetchEverRef = useRef(true)
+    const clipRequestRef = useRef(null)
+
+    useEffect(() => {
+        return () => {
+            if (clipRequestRef.current) {
+                clipRequestRef.current.abort()
+            }
+        }
+    }, [])
 
     useEffect(() => {
         let cancelled = false
@@ -339,6 +353,98 @@ export default function NoiseLevelChart() {
 
     const handlePlotMouseLeave = () => setHoverIdx(null)
 
+    const getNearestSeriesIndex = (innerX, innerY) => {
+        if (series.length === 0 || innerX < 0 || innerX > innerW || innerY < 0 || innerY > innerH) {
+            return null
+        }
+
+        let best = 0
+        let bestDx = Infinity
+        for (let i = 0; i < series.length; i++) {
+            const dx = Math.abs(xScale(series[i].t) - innerX)
+            if (dx < bestDx) {
+                bestDx = dx
+                best = i
+            }
+        }
+        return bestDx <= HOVER_SNAP_X_PX ? best : null
+    }
+
+    const requestClipForBar = (idx) => {
+        const point = series[idx]
+        if (!point) return
+
+        if (clipRequestRef.current) {
+            clipRequestRef.current.abort()
+        }
+
+        const controller = new AbortController()
+        clipRequestRef.current = controller
+        const requestedAt = point.t.toISOString()
+
+        setClipPanel({
+            idx,
+            requestedAt,
+            status: 'loading',
+            clipUrl: null,
+            error: null,
+        })
+
+        fetch(NVR_CLIPS_API, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                at: requestedAt,
+                camera_id: DEFAULT_CAMERA_ID,
+            }),
+            signal: controller.signal,
+        })
+            .then(async (res) => {
+                const json = await res.json().catch(() => ({}))
+                if (!res.ok) {
+                    throw new Error(json.message || json.detail || `HTTP ${res.status}`)
+                }
+                if (!json.clip_url) {
+                    throw new Error('Clip response did not include a URL.')
+                }
+                return json
+            })
+            .then((json) => {
+                setClipPanel({
+                    idx,
+                    requestedAt,
+                    status: 'ready',
+                    clipUrl: json.clip_url,
+                    error: null,
+                })
+            })
+            .catch((e) => {
+                if (e.name === 'AbortError') return
+                setClipPanel({
+                    idx,
+                    requestedAt,
+                    status: 'error',
+                    clipUrl: null,
+                    error: e.message ?? String(e),
+                })
+            })
+            .finally(() => {
+                if (clipRequestRef.current === controller) {
+                    clipRequestRef.current = null
+                }
+            })
+    }
+
+    const handlePlotClick = (e) => {
+        const [innerX, innerY] = d3.pointer(e, e.currentTarget)
+        const idx = getNearestSeriesIndex(innerX, innerY)
+        if (idx == null) return
+        requestClipForBar(idx)
+    }
+
     const seedCustomRangeFromNow = () => {
         const end = new Date()
         const startStr = toDatetimeLocalValue(dayStartLocal(end))
@@ -492,6 +598,16 @@ export default function NoiseLevelChart() {
               ? `${payload.count} samples`
               : `${(payload?.results ?? []).length} samples`
 
+    const selectedPoint =
+        clipPanel && series[clipPanel.idx] ? series[clipPanel.idx] : null
+
+    const clipPanelStyle = selectedPoint
+        ? {
+              left: `${((margin.left + xScale(selectedPoint.t)) / width) * 100}%`,
+              top: `${(Math.max(8, margin.top + yScale(selectedPoint.y) - 178) / height) * 100}%`,
+          }
+        : null
+
     return (
         <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
             <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
@@ -516,6 +632,51 @@ export default function NoiseLevelChart() {
                         <span className="rounded-md bg-slate-900/85 px-2 py-1 text-xs text-slate-200 shadow">
                             Updating…
                         </span>
+                    </div>
+                )}
+                {clipPanel && selectedPoint && clipPanelStyle && (
+                    <div
+                        className="absolute z-20 w-64 -translate-x-1/2 rounded-lg border border-slate-600 bg-slate-950/95 p-3 text-left text-slate-100 shadow-2xl ring-1 ring-black/30"
+                        style={clipPanelStyle}
+                    >
+                        <div className="mb-2 flex items-start justify-between gap-3">
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-amber-300">
+                                    Noise clip
+                                </p>
+                                <p className="text-xs text-slate-400">
+                                    {xTickFormatFn(new Date(clipPanel.requestedAt))}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setClipPanel(null)}
+                                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
+                                aria-label="Close clip"
+                            >
+                                ×
+                            </button>
+                        </div>
+                        {clipPanel.status === 'loading' && (
+                            <div className="flex h-24 items-center justify-center rounded-md bg-slate-900 text-sm text-slate-300">
+                                Fetching clip…
+                            </div>
+                        )}
+                        {clipPanel.status === 'error' && (
+                            <div className="rounded-md bg-red-950/50 p-2 text-sm text-red-200">
+                                {clipPanel.error}
+                            </div>
+                        )}
+                        {clipPanel.status === 'ready' && clipPanel.clipUrl && (
+                            <video
+                                key={clipPanel.clipUrl}
+                                src={clipPanel.clipUrl}
+                                controls
+                                playsInline
+                                preload="metadata"
+                                className="aspect-video w-full rounded-md bg-black"
+                            />
+                        )}
                     </div>
                 )}
                 <svg
@@ -568,9 +729,9 @@ export default function NoiseLevelChart() {
                                 fill="url(#noiseBarFill)"
                                 rx={2}
                                 opacity={0.92}
-                                stroke={hoverIdx === i ? '#f8fafc' : '#0f172a'}
-                                strokeWidth={hoverIdx === i ? 1.5 : 0.5}
-                                strokeOpacity={hoverIdx === i ? 1 : 0.35}
+                                stroke={clipPanel?.idx === i ? '#f59e0b' : hoverIdx === i ? '#f8fafc' : '#0f172a'}
+                                strokeWidth={clipPanel?.idx === i ? 2 : hoverIdx === i ? 1.5 : 0.5}
+                                strokeOpacity={clipPanel?.idx === i || hoverIdx === i ? 1 : 0.35}
                             />
                         )
                     })}
@@ -629,9 +790,10 @@ export default function NoiseLevelChart() {
                         width={innerW}
                         height={innerH}
                         fill="transparent"
-                        cursor="crosshair"
+                        cursor="pointer"
                         onMouseMove={handlePlotMouseMove}
                         onMouseLeave={handlePlotMouseLeave}
+                        onClick={handlePlotClick}
                     />
                     {yScale.ticks(6).map((tick) => (
                         <text
