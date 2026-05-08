@@ -370,6 +370,7 @@ export default function NoiseLevelChart() {
         if (clipRequestRef.current) {
             clipRequestRef.current.abort()
         }
+        requestClipDelete(clipPanel?.filename)
 
         const controller = new AbortController()
         clipRequestRef.current = controller
@@ -380,6 +381,7 @@ export default function NoiseLevelChart() {
             requestedAt,
             status: 'loading',
             clipUrl: null,
+            filename: null,
             error: null,
         })
 
@@ -411,6 +413,7 @@ export default function NoiseLevelChart() {
                     requestedAt,
                     status: 'ready',
                     clipUrl: json.clip_url,
+                    filename: json.filename ?? null,
                     error: null,
                 })
             })
@@ -421,6 +424,7 @@ export default function NoiseLevelChart() {
                     requestedAt,
                     status: 'error',
                     clipUrl: null,
+                    filename: null,
                     error: e.message ?? String(e),
                 })
             })
@@ -436,6 +440,30 @@ export default function NoiseLevelChart() {
         const idx = getNearestSeriesIndex(innerX, innerY)
         if (idx == null) return
         requestClipForBar(idx)
+    }
+
+    const requestClipDelete = (filename) => {
+        if (!filename) return
+        fetch(NVR_CLIPS_API, {
+            method: 'DELETE',
+            headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ filename }),
+            cache: 'no-store',
+        }).catch(() => {
+            // Best-effort cleanup; the popup should still close even if deletion fails.
+        })
+    }
+
+    const handleCloseClipPanel = () => {
+        if (clipRequestRef.current) {
+            clipRequestRef.current.abort()
+            clipRequestRef.current = null
+        }
+        requestClipDelete(clipPanel?.filename)
+        setClipPanel(null)
     }
 
     const seedCustomRangeFromNow = () => {
@@ -643,7 +671,7 @@ export default function NoiseLevelChart() {
                             </div>
                             <button
                                 type="button"
-                                onClick={() => setClipPanel(null)}
+                                onClick={handleCloseClipPanel}
                                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400"
                                 aria-label="Close clip"
                             >
