@@ -18,6 +18,9 @@ const BIN_MINUTES = 5
 /** Bar fill gradient: quiet (low dB / more negative) → loud */
 const LEVEL_COLORS = ['#22c55e', '#eab308', '#ef4444', '#a855f7']
 
+/** Fixed RMS chart bounds in dB. */
+const Y_DOMAIN = [-60, -10]
+
 /** Push the first color breaks ~5% toward the top of the bar so the green band occupies more vertical space. */
 const GRADIENT_GREEN_LIFT_PCT = 10
 
@@ -250,16 +253,6 @@ export default function NoiseLevelChart() {
     const innerW = width - margin.left - margin.right
     const innerH = height - margin.top - margin.bottom
 
-    const yDomain = useMemo(() => {
-        if (series.length === 0) return [-55, -15]
-        const ys = series.map((d) => d.y)
-        const lo = d3.min(ys) ?? -55
-        const hi = d3.max(ys) ?? -15
-        const span = hi - lo || 1
-        const pad = Math.max(2, span * 0.08)
-        return [lo - pad, hi + pad]
-    }, [series])
-
     const xDomain = useMemo(() => {
         if (series.length === 0) return [new Date(), new Date()]
         const t0 = series[0].t
@@ -277,8 +270,8 @@ export default function NoiseLevelChart() {
     )
 
     const yScale = useMemo(
-        () => d3.scaleLinear().domain(yDomain).nice().range([innerH, 0]),
-        [yDomain, innerH]
+        () => d3.scaleLinear().domain(Y_DOMAIN).range([innerH, 0]).clamp(true),
+        [innerH]
     )
 
     /** Pixel width of one time bin (bars are centered on each sample time). */
@@ -289,7 +282,7 @@ export default function NoiseLevelChart() {
         return Math.max(4, Math.abs(xScale(new Date(t0 + binMs)) - xScale(new Date(t0))))
     }, [series, xScale])
 
-    /** Bottom of plot area (matches `nice()`-rounded y domain). */
+    /** Bottom of plot area (fixed at -60 dB). */
     const yBaseline = yScale(yScale.domain()[0])
 
     /** Vertical gradient: quieter RMS (bottom) → louder RMS (top), keyed to y-scale domain. */
