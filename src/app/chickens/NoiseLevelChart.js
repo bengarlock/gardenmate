@@ -99,6 +99,9 @@ const TIMEFRAME_OPTIONS = [...PRESETS, { id: 'custom', label: 'Custom' }]
 /** Snap hover to the nearest time bucket when within this many SVG units on the x-axis */
 const HOVER_SNAP_X_PX = 36
 
+const CLIP_PANEL_WIDTH_REM = 16
+const CLIP_PANEL_EDGE_GAP_REM = 0.5
+
 export default function NoiseLevelChart() {
     const [payload, setPayload] = useState(null)
     const [loading, setLoading] = useState(true)
@@ -622,12 +625,17 @@ export default function NoiseLevelChart() {
     const selectedPoint =
         clipPanel && series[clipPanel.idx] ? series[clipPanel.idx] : null
 
-    const clipPanelStyle = selectedPoint
-        ? {
-              left: `${((margin.left + xScale(selectedPoint.t)) / width) * 100}%`,
-              top: `${(Math.max(8, margin.top + yScale(selectedPoint.y) - 178) / height) * 100}%`,
-          }
+    const clipAnchorPct = selectedPoint
+        ? ((margin.left + xScale(selectedPoint.t)) / width) * 100
         : null
+
+    const clipPanelStyle =
+        selectedPoint && clipAnchorPct != null
+            ? {
+                  left: `clamp(${CLIP_PANEL_EDGE_GAP_REM}rem, calc(${clipAnchorPct}% - ${CLIP_PANEL_WIDTH_REM / 2}rem), calc(100% - ${CLIP_PANEL_WIDTH_REM + CLIP_PANEL_EDGE_GAP_REM}rem))`,
+                  top: `${(Math.max(8, margin.top + yScale(selectedPoint.y) - 178) / height) * 100}%`,
+              }
+            : null
 
     return (
         <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
@@ -657,7 +665,7 @@ export default function NoiseLevelChart() {
                 )}
                 {clipPanel && selectedPoint && clipPanelStyle && (
                     <div
-                        className="absolute z-20 w-64 -translate-x-1/2 rounded-lg border border-slate-600 bg-slate-950/95 p-3 text-left text-slate-100 shadow-2xl ring-1 ring-black/30"
+                        className="absolute z-20 w-64 max-w-[calc(100%_-_1rem)] rounded-lg border border-slate-600 bg-slate-950/95 p-3 text-left text-slate-100 shadow-2xl ring-1 ring-black/30"
                         style={clipPanelStyle}
                     >
                         <div className="mb-2 flex items-start justify-between gap-3">
