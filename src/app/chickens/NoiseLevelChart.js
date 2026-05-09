@@ -888,6 +888,8 @@ export default function NoiseLevelChart() {
           }
         : null
 
+    const hoverPoint = hoverIdx != null && series[hoverIdx] ? series[hoverIdx] : null
+
     return (
         <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
             <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
@@ -896,6 +898,19 @@ export default function NoiseLevelChart() {
             {dayNavigationControls}
             {timeframeControls}
             {rangePicker}
+            <div className="absolute right-6 top-32 z-10 w-44 rounded-lg border border-slate-700/80 bg-slate-950/85 px-3 py-2 text-right shadow-lg ring-1 ring-black/20">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                    RMS
+                </p>
+                <p className="text-sm font-semibold text-slate-100">
+                    {hoverPoint?.rms != null && Number.isFinite(hoverPoint.rms)
+                        ? `${Number(hoverPoint.rms).toFixed(2)} dB`
+                        : '—'}
+                </p>
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                    {hoverPoint ? xTickFormatFn(hoverPoint.t) : 'Hover a bar'}
+                </p>
+            </div>
             {error && payload && (
                 <p className="mb-3 text-sm text-red-300">Could not refresh noise data: {error}</p>
             )}
@@ -1022,44 +1037,8 @@ export default function NoiseLevelChart() {
                                 strokeDasharray="4 4"
                                 strokeOpacity={0.9}
                             />
-                            <g
-                                transform={`translate(${xScale(series[hoverIdx].t)}, ${yScale(series[hoverIdx].y) - 14})`}
-                            >
-                                <rect
-                                    x={-56}
-                                    y={-40}
-                                    width={112}
-                                    height={34}
-                                    rx={6}
-                                    fill="#0f172a"
-                                    stroke="#475569"
-                                    strokeWidth={1}
-                                />
-                                <text
-                                    x={0}
-                                    y={-22}
-                                    textAnchor="middle"
-                                    fill="#f1f5f9"
-                                    fontSize={12}
-                                    fontWeight={600}
-                                >
-                                    RMS{' '}
-                                    {series[hoverIdx].rms != null && Number.isFinite(series[hoverIdx].rms)
-                                        ? `${Number(series[hoverIdx].rms).toFixed(2)} dB`
-                                        : '—'}
-                                </text>
-                                <text
-                                    x={0}
-                                    y={-8}
-                                    textAnchor="middle"
-                                    fill="#94a3b8"
-                                    fontSize={10}
-                                >
-                                    {xTickFormatFn(series[hoverIdx].t)}
-                                </text>
-                            </g>
-	                        </g>
-	                    )}
+		                        </g>
+		                    )}
                     {zoomSelection && (
                         <g pointerEvents="none">
                             <rect
