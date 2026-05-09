@@ -30,6 +30,43 @@ function dayStartLocal(d) {
     return x
 }
 
+function addLocalDays(d, days) {
+    const x = new Date(d)
+    x.setDate(x.getDate() + days)
+    return x
+}
+
+function isSameLocalDay(a, b) {
+    return (
+        a.getFullYear() === b.getFullYear() &&
+        a.getMonth() === b.getMonth() &&
+        a.getDate() === b.getDate()
+    )
+}
+
+function isBeforeLocalDay(a, b) {
+    return dayStartLocal(a).getTime() < dayStartLocal(b).getTime()
+}
+
+function monthStartLocal(d) {
+    return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+
+function addLocalMonths(d, months) {
+    return new Date(d.getFullYear(), d.getMonth() + months, 1)
+}
+
+function formatDayRange(start, end) {
+    const fmt = new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+    })
+    if (!start || !end) return ''
+    if (isSameLocalDay(start, end)) return fmt.format(start)
+    return `${fmt.format(start)} - ${fmt.format(end)}`
+}
+
 /** UTC instant as `YYYY-MM-DDTHH:mm:ssZ` (matches binned API query examples). */
 function formatUtcISOZ(d) {
     const pad = (n) => String(n).padStart(2, '0')
@@ -45,56 +82,7 @@ function buildNoiseUrl(start, end) {
     return `${NOISE_API}?${q.toString()}`
 }
 
-/** `datetime-local` value in local time (`YYYY-MM-DDTHH:mm`). */
-function toDatetimeLocalValue(d) {
-    const pad = (n) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-/** Parse `datetime-local` string to a local Date (seconds default to 0). */
-function fromDatetimeLocalValue(s) {
-    if (!s || typeof s !== 'string') return null
-    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/)
-    if (!m) return null
-    const y = Number(m[1])
-    const mo = Number(m[2])
-    const d = Number(m[3])
-    const hh = Number(m[4])
-    const mm = Number(m[5])
-    const ss = m[6] != null ? Number(m[6]) : 0
-    const dt = new Date(y, mo - 1, d, hh, mm, ss, 0)
-    return Number.isNaN(dt.getTime()) ? null : dt
-}
-
-/** Presets; `getRange()` is called on each fetch so `end` stays current for polling. */
-const PRESETS = [
-    {
-        id: 'today',
-        label: 'Today',
-        getRange: () => {
-            const end = new Date()
-            return { start: dayStartLocal(end), end }
-        },
-    },
-    {
-        id: '24h',
-        label: '24 hours',
-        getRange: () => {
-            const end = new Date()
-            return { start: new Date(end.getTime() - 24 * 60 * 60 * 1000), end }
-        },
-    },
-    {
-        id: '7d',
-        label: '7 days',
-        getRange: () => {
-            const end = new Date()
-            return { start: new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000), end }
-        },
-    },
-]
-
-const TIMEFRAME_OPTIONS = [...PRESETS, { id: 'custom', label: 'Custom' }]
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 /** Snap hover to the nearest time bucket when within this many SVG units on the x-axis */
 const HOVER_SNAP_X_PX = 36
@@ -108,10 +96,12 @@ export default function NoiseLevelChart() {
     const [isRefreshing, setIsRefreshing] = useState(false)
     const [error, setError] = useState(null)
     const [hoverIdx, setHoverIdx] = useState(null)
-    const [timeframe, setTimeframe] = useState('today')
-    const [customStartInput, setCustomStartInput] = useState('')
-    const [customEndInput, setCustomEndInput] = useState('')
-    const [customApplied, setCustomApplied] = useState({ start: '', end: '' })
+    const [timeframe, setTimeframe] = useState('day')
+    const [selectedDay, setSelectedDay] = useState(() => dayStartLocal(new Date()))
+    const [rangeApplied, setRangeApplied] = useState(null)
+    const [rangeDraft, setRangeDraft] = useState({ start: null, end: null })
+    const [rangePickerOpen, setRangePickerOpen] = useState(false)
+    const [calendarMonth, setCalendarMonth] = useState(() => monthStartLocal(new Date()))
     const [rangeValidationError, setRangeValidationError] = useState(null)
     const [clipPanel, setClipPanel] = useState(null)
     const firstFetchEverRef = useRef(true)
@@ -132,19 +122,17 @@ export default function NoiseLevelChart() {
             let start
             let end
 
-            if (timeframe === 'custom') {
-                if (!customApplied.start || !customApplied.end) {
+            if (timeframe === 'range') {
+                if (!rangeApplied?.start || !rangeApplied?.end) {
                     return
                 }
-                start = fromDatetimeLocalValue(customApplied.start)
-                end = fromDatetimeLocalValue(customApplied.end)
-                if (!start || !end || start.getTime() >= end.getTime()) {
-                    return
-                }
-            } else {
-                const preset = PRESETS.find((t) => t.id === timeframe)
-                if (!preset) return
-                ;({ start, end } = preset.getRange())
+                start = dayStartLocal(rangeApplied.start)
+                end = addLocalDays(dayStartLocal(rangeApplied.end), 1)
+            } else if (timeframe === 'day') {
+                const now = new Date()
+                start = dayStartLocal(selectedDay)
+                const nextDay = addLocalDays(start, 1)
+                end = isSameLocalDay(start, now) ? now : nextDay
             }
 
             const isFirstEver = firstFetchEverRef.current
@@ -185,7 +173,7 @@ export default function NoiseLevelChart() {
             cancelled = true
             clearInterval(intervalId)
         }
-    }, [timeframe, customApplied.start, customApplied.end])
+    }, [timeframe, selectedDay, rangeApplied])
 
     const rawSeries = useMemo(() => {
         if (!payload) return []
@@ -469,121 +457,283 @@ export default function NoiseLevelChart() {
         setClipPanel(null)
     }
 
-    const seedCustomRangeFromNow = () => {
-        const end = new Date()
-        const startStr = toDatetimeLocalValue(dayStartLocal(end))
-        const endStr = toDatetimeLocalValue(end)
-        setCustomStartInput(startStr)
-        setCustomEndInput(endStr)
-        setCustomApplied({ start: startStr, end: endStr })
+    const resetChartSelection = () => {
+        setHoverIdx(null)
+        handleCloseClipPanel()
     }
 
-    const handleApplyCustom = () => {
-        if (!customStartInput || !customEndInput) {
-            setRangeValidationError('Choose both start and end.')
-            return
-        }
-        const start = fromDatetimeLocalValue(customStartInput)
-        const end = fromDatetimeLocalValue(customEndInput)
-        if (!start || !end) {
-            setRangeValidationError('Invalid date or time.')
-            return
-        }
-        if (start.getTime() >= end.getTime()) {
-            setRangeValidationError('Start must be before end.')
-            return
-        }
+    const handleDayStep = (days) => {
+        resetChartSelection()
+        setError(null)
+        setTimeframe('day')
+        setRangePickerOpen(false)
+        setSelectedDay((current) => dayStartLocal(addLocalDays(current, days)))
+    }
+
+    const handleTodayClick = () => {
+        resetChartSelection()
+        setError(null)
         setRangeValidationError(null)
-        setError(null)
-        setCustomApplied({ start: customStartInput, end: customEndInput })
+        setRangePickerOpen(false)
+        setSelectedDay(dayStartLocal(new Date()))
+        setTimeframe('day')
     }
 
-    const handleTimeframeClick = (tfId) => {
-        setError(null)
-        if (tfId === 'custom') {
-            seedCustomRangeFromNow()
+    const openRangePicker = () => {
+        if (rangePickerOpen) {
+            setRangePickerOpen(false)
             setRangeValidationError(null)
-            setTimeframe('custom')
             return
         }
-        setTimeframe(tfId)
+
+        const baseStart = rangeApplied?.start ?? selectedDay
+        const baseEnd = rangeApplied?.end ?? selectedDay
+        setRangeDraft({
+            start: dayStartLocal(baseStart),
+            end: dayStartLocal(baseEnd),
+        })
+        setCalendarMonth(monthStartLocal(baseStart))
+        setRangeValidationError(null)
+        setRangePickerOpen(true)
     }
 
-    const datetimeLocalInputClass =
-        'mt-1 min-h-[42px] w-full min-w-[11rem] rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 shadow-inner focus:border-amber-500/70 focus:outline-none focus:ring-2 focus:ring-amber-400/50 sm:w-auto'
+    const handleCalendarDateClick = (day) => {
+        const clicked = dayStartLocal(day)
+        setRangeValidationError(null)
+        setRangeDraft((current) => {
+            if (!current.start || current.end) {
+                return { start: clicked, end: null }
+            }
+            if (isBeforeLocalDay(clicked, current.start)) {
+                return { start: clicked, end: current.start }
+            }
+            return { start: current.start, end: clicked }
+        })
+    }
+
+    const handleApplyRange = () => {
+        if (!rangeDraft.start || !rangeDraft.end) {
+            setRangeValidationError('Select a start day and an end day.')
+            return
+        }
+        resetChartSelection()
+        setError(null)
+        setRangeValidationError(null)
+        setRangeApplied({
+            start: dayStartLocal(rangeDraft.start),
+            end: dayStartLocal(rangeDraft.end),
+        })
+        setTimeframe('range')
+        setRangePickerOpen(false)
+    }
+
+    const selectedDayLabel = useMemo(
+        () =>
+            new Intl.DateTimeFormat(undefined, {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+            }).format(selectedDay),
+        [selectedDay]
+    )
+
+    const rangeLabel = useMemo(
+        () =>
+            rangeApplied?.start && rangeApplied?.end
+                ? formatDayRange(rangeApplied.start, rangeApplied.end)
+                : selectedDayLabel,
+        [rangeApplied, selectedDayLabel]
+    )
+
+    const activeDateLabel = timeframe === 'range' ? rangeLabel : selectedDayLabel
+
+    const isSelectedDayToday = isSameLocalDay(selectedDay, new Date())
+
+    const calendarCells = useMemo(() => {
+        const firstOfMonth = monthStartLocal(calendarMonth)
+        const gridStart = addLocalDays(firstOfMonth, -firstOfMonth.getDay())
+        return Array.from({ length: 42 }, (_, i) => dayStartLocal(addLocalDays(gridStart, i)))
+    }, [calendarMonth])
+
+    const calendarMonthLabel = useMemo(
+        () =>
+            new Intl.DateTimeFormat(undefined, {
+                month: 'long',
+                year: 'numeric',
+            }).format(calendarMonth),
+        [calendarMonth]
+    )
 
     const timeframeControls = (
         <div
-            className="mb-4 flex flex-wrap gap-2"
+            className="mb-4 flex flex-wrap justify-center gap-2"
             role="group"
             aria-label="Time range for noise data"
         >
-            {TIMEFRAME_OPTIONS.map((tf) => (
-                <button
-                    key={tf.id}
-                    type="button"
-                    onClick={() => handleTimeframeClick(tf.id)}
-                    aria-pressed={timeframe === tf.id}
-                    className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 ${
-                        timeframe === tf.id
-                            ? 'bg-amber-500/90 text-slate-900 shadow-sm'
-                            : 'bg-slate-700/80 text-slate-200 hover:bg-slate-600/90'
-                    }`}
-                >
-                    {tf.label}
-                </button>
-            ))}
+            <button
+                type="button"
+                onClick={handleTodayClick}
+                aria-pressed={timeframe === 'day' && isSelectedDayToday}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 ${
+                    timeframe === 'day' && isSelectedDayToday
+                        ? 'bg-amber-500/90 text-slate-900 shadow-sm'
+                        : 'bg-slate-700/80 text-slate-200 hover:bg-slate-600/90'
+                }`}
+            >
+                Today
+            </button>
         </div>
     )
 
-    const customRangePickers =
-        timeframe === 'custom' ? (
-            <div className="mb-4 flex flex-col gap-3 border-t border-slate-700/80 pt-4 sm:flex-row sm:flex-wrap sm:items-end">
-                <label className="flex min-w-[11rem] flex-1 flex-col text-sm text-slate-300">
-                    Start
-                    <input
-                        type="datetime-local"
-                        value={customStartInput}
-                        onChange={(e) => setCustomStartInput(e.target.value)}
-                        className={datetimeLocalInputClass}
-                        aria-invalid={rangeValidationError ? true : undefined}
-                    />
-                </label>
-                <label className="flex min-w-[11rem] flex-1 flex-col text-sm text-slate-300">
-                    End
-                    <input
-                        type="datetime-local"
-                        value={customEndInput}
-                        onChange={(e) => setCustomEndInput(e.target.value)}
-                        className={datetimeLocalInputClass}
-                    />
-                </label>
+    const dayNavigationControls = (
+        <div className="mb-3 flex flex-wrap items-center justify-center gap-2 pt-4">
+            {timeframe === 'day' ? (
                 <button
                     type="button"
-                    onClick={handleApplyCustom}
-                    className="mb-1 rounded-lg bg-amber-500/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition-colors hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 sm:shrink-0"
+                    onClick={() => handleDayStep(-1)}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-700/80 text-xl leading-none text-slate-100 transition-colors hover:bg-slate-600/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+                    aria-label="Show previous day"
+                    title="Previous day"
+                >
+                    ‹
+                </button>
+            ) : (
+                <span className="h-9 w-9" aria-hidden="true" />
+            )}
+            <button
+                type="button"
+                onClick={openRangePicker}
+                className="min-h-9 min-w-[13rem] rounded-lg px-3 text-center text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-700/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+                aria-expanded={rangePickerOpen}
+                aria-label="Choose date range"
+            >
+                {activeDateLabel}
+            </button>
+            {timeframe === 'day' ? (
+                <button
+                    type="button"
+                    onClick={() => handleDayStep(1)}
+                    disabled={isSelectedDayToday}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-700/80 text-xl leading-none text-slate-100 transition-colors hover:bg-slate-600/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-slate-700/80"
+                    aria-label="Show next day"
+                    title="Next day"
+                >
+                    ›
+                </button>
+            ) : (
+                <span className="h-9 w-9" aria-hidden="true" />
+            )}
+        </div>
+    )
+
+    const rangePicker = rangePickerOpen ? (
+        <div className="absolute left-1/2 top-28 z-30 w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-slate-700/80 bg-slate-900/95 p-3 shadow-2xl ring-1 ring-black/30">
+            <div className="mb-3 flex items-center justify-between gap-3">
+                <button
+                    type="button"
+                    onClick={() => setCalendarMonth((current) => addLocalMonths(current, -1))}
+                    className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-700/80 text-lg leading-none text-slate-100 transition-colors hover:bg-slate-600/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+                    aria-label="Previous month"
+                    title="Previous month"
+                >
+                    ‹
+                </button>
+                <div className="text-sm font-semibold text-slate-100">{calendarMonthLabel}</div>
+                <button
+                    type="button"
+                    onClick={() => setCalendarMonth((current) => addLocalMonths(current, 1))}
+                    className="flex h-8 w-8 items-center justify-center rounded-md bg-slate-700/80 text-lg leading-none text-slate-100 transition-colors hover:bg-slate-600/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+                    aria-label="Next month"
+                    title="Next month"
+                >
+                    ›
+                </button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase text-slate-500">
+                {WEEKDAY_LABELS.map((label) => (
+                    <div key={label}>{label}</div>
+                ))}
+            </div>
+            <div className="mt-1 grid grid-cols-7 gap-1">
+                {calendarCells.map((day) => {
+                    const inCurrentMonth = day.getMonth() === calendarMonth.getMonth()
+                    const isStart = rangeDraft.start && isSameLocalDay(day, rangeDraft.start)
+                    const isEnd = rangeDraft.end && isSameLocalDay(day, rangeDraft.end)
+                    const isInRange =
+                        rangeDraft.start &&
+                        rangeDraft.end &&
+                        !isBeforeLocalDay(day, rangeDraft.start) &&
+                        !isBeforeLocalDay(rangeDraft.end, day)
+                    const isToday = isSameLocalDay(day, new Date())
+                    const selectedClass =
+                        isStart || isEnd
+                            ? 'bg-amber-500 text-slate-950 shadow-sm'
+                            : isInRange
+                              ? 'bg-amber-500/25 text-amber-100'
+                              : isToday
+                                ? 'bg-slate-700/80 text-slate-100'
+                                : 'text-slate-200 hover:bg-slate-700/80'
+
+                    return (
+                        <button
+                            key={day.toISOString()}
+                            type="button"
+                            onClick={() => handleCalendarDateClick(day)}
+                            className={`relative flex aspect-square min-h-9 items-center justify-center rounded-md text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 ${
+                                inCurrentMonth ? selectedClass : `opacity-45 ${selectedClass}`
+                            }`}
+                            aria-pressed={Boolean(isStart || isEnd || isInRange)}
+                            aria-label={new Intl.DateTimeFormat(undefined, {
+                                weekday: 'long',
+                                month: 'long',
+                                day: 'numeric',
+                                year: 'numeric',
+                            }).format(day)}
+                        >
+                            {day.getDate()}
+                        </button>
+                    )
+                })}
+            </div>
+            {rangeDraft.start && rangeDraft.end && (
+                <div className="mt-3 text-center text-sm font-medium text-amber-200">
+                    {formatDayRange(rangeDraft.start, rangeDraft.end)}
+                </div>
+            )}
+            {rangeValidationError && (
+                <p className="mt-3 text-center text-sm text-red-300" role="alert">
+                    {rangeValidationError}
+                </p>
+            )}
+            <div className="mt-3 flex justify-center gap-2">
+                <button
+                    type="button"
+                    onClick={() => setRangePickerOpen(false)}
+                    className="rounded-lg bg-slate-700/80 px-4 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-slate-600/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+                >
+                    Cancel
+                </button>
+                <button
+                    type="button"
+                    onClick={handleApplyRange}
+                    className="rounded-lg bg-amber-500/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition-colors hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
                 >
                     Apply range
                 </button>
-                {rangeValidationError && (
-                    <p className="basis-full text-sm text-red-300" role="alert">
-                        {rangeValidationError}
-                    </p>
-                )}
-                <p className="basis-full text-xs text-slate-500">
-                    Times use your device&apos;s local timezone. Polling repeats this same window.
-                </p>
             </div>
-        ) : null
+        </div>
+    ) : null
 
     if (loading && !payload) {
         return (
-            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
+            <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
                 <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
                     Noise Level
                 </h2>
+                {dayNavigationControls}
                 {timeframeControls}
-                {customRangePickers}
+                {rangePicker}
                 <p className="text-slate-300">Loading noise levels…</p>
             </div>
         )
@@ -591,12 +741,13 @@ export default function NoiseLevelChart() {
 
     if (error && !payload) {
         return (
-            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
+            <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
                 <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
                     Noise Level
                 </h2>
+                {dayNavigationControls}
                 {timeframeControls}
-                {customRangePickers}
+                {rangePicker}
                 <p className="text-red-300">Could not load noise data: {error}</p>
             </div>
         )
@@ -604,23 +755,17 @@ export default function NoiseLevelChart() {
 
     if (rawSeries.length === 0) {
         return (
-            <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
+            <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
                 <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
                     Noise Level
                 </h2>
+                {dayNavigationControls}
                 {timeframeControls}
-                {customRangePickers}
+                {rangePicker}
                 <p className="text-slate-400">No RMS readings in this response.</p>
             </div>
         )
     }
-
-    const sampleNote =
-        Array.isArray(payload?.bins) && payload.bins.length > 0
-            ? `${payload.bin_count != null ? payload.bin_count : payload.bins.length} bins`
-            : payload?.count != null
-              ? `${payload.count} samples`
-              : `${(payload?.results ?? []).length} samples`
 
     const selectedPoint =
         clipPanel && series[clipPanel.idx] ? series[clipPanel.idx] : null
@@ -638,24 +783,20 @@ export default function NoiseLevelChart() {
             : null
 
     return (
-        <div className="w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
+        <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
             <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
                 Noise Level
             </h2>
+            {dayNavigationControls}
             {timeframeControls}
-            {customRangePickers}
+            {rangePicker}
             {error && payload && (
                 <p className="mb-3 text-sm text-red-300">Could not refresh noise data: {error}</p>
             )}
-            <p className="mb-4 text-sm text-slate-400">
-                {payload?.date ? `${payload.date} · ` : ''}
-                {sampleNote}
-                {` · ${BIN_MINUTES}-minute bins`}
-            </p>
             <div className="relative">
                 {isRefreshing && (
                     <div
-                        className="pointer-events-none absolute inset-0 z-10 flex items-start justify-end rounded-lg pt-2 pr-2"
+                        className="pointer-events-none absolute inset-x-0 top-8 z-10 flex justify-center rounded-lg"
                         aria-live="polite"
                     >
                         <span className="rounded-md bg-slate-900/85 px-2 py-1 text-xs text-slate-200 shadow">
