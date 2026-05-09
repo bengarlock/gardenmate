@@ -86,6 +86,8 @@ const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 /** Snap hover to the nearest time bucket when within this many SVG units on the x-axis */
 const HOVER_SNAP_X_PX = 36
+const MIN_ZOOM_DRAG_PX = 16
+const MIN_ZOOM_SPAN_MS = BIN_MINUTES * 60 * 1000
 
 export default function NoiseLevelChart() {
     const [payload, setPayload] = useState(null)
@@ -99,10 +101,13 @@ export default function NoiseLevelChart() {
     const [rangeDraft, setRangeDraft] = useState({ start: null, end: null })
     const [rangePickerOpen, setRangePickerOpen] = useState(false)
     const [calendarMonth, setCalendarMonth] = useState(() => monthStartLocal(new Date()))
+    const [zoomApplied, setZoomApplied] = useState(null)
+    const [zoomDrag, setZoomDrag] = useState(null)
     const [rangeValidationError, setRangeValidationError] = useState(null)
     const [clipPanel, setClipPanel] = useState(null)
     const firstFetchEverRef = useRef(true)
     const clipRequestRef = useRef(null)
+    const suppressNextClickRef = useRef(false)
 
     useEffect(() => {
         return () => {
@@ -119,7 +124,13 @@ export default function NoiseLevelChart() {
             let start
             let end
 
-            if (timeframe === 'range') {
+            if (timeframe === 'zoom') {
+                if (!zoomApplied?.start || !zoomApplied?.end) {
+                    return
+                }
+                start = zoomApplied.start
+                end = zoomApplied.end
+            } else if (timeframe === 'range') {
                 if (!rangeApplied?.start || !rangeApplied?.end) {
                     return
                 }
@@ -170,7 +181,7 @@ export default function NoiseLevelChart() {
             cancelled = true
             clearInterval(intervalId)
         }
-    }, [timeframe, selectedDay, rangeApplied])
+    }, [timeframe, selectedDay, rangeApplied, zoomApplied])
 
     const rawSeries = useMemo(() => {
         if (!payload) return []
@@ -312,10 +323,34 @@ export default function NoiseLevelChart() {
     const xAxisLabel = xDomainSpanMs > 24 * 60 * 60 * 1000 ? 'Date & time' : 'Time of day'
 
     const formatDbTick = (v) => `${d3.format('.1f')(v)} dB`
+    const clampPlotX = (x) => Math.min(innerW, Math.max(0, x))
+
+    const zoomSelection =
+        zoomDrag && Math.abs(zoomDrag.currentX - zoomDrag.startX) >= MIN_ZOOM_DRAG_PX
+            ? {
+                  x: Math.min(zoomDrag.startX, zoomDrag.currentX),
+                  width: Math.abs(zoomDrag.currentX - zoomDrag.startX),
+                  label: `${xTickFormatFn(xScale.invert(Math.min(zoomDrag.startX, zoomDrag.currentX)))} - ${xTickFormatFn(
+                      xScale.invert(Math.max(zoomDrag.startX, zoomDrag.currentX))
+                  )}`,
+              }
+            : null
 
     const handlePlotMouseMove = (e) => {
         if (series.length === 0) return
         const [innerX, innerY] = d3.pointer(e, e.currentTarget)
+        if (zoomDrag) {
+            setZoomDrag((current) =>
+                current
+                    ? {
+                          ...current,
+                          currentX: clampPlotX(innerX),
+                      }
+                    : current
+            )
+            setHoverIdx(null)
+            return
+        }
         if (innerX < 0 || innerX > innerW || innerY < 0 || innerY > innerH) {
             setHoverIdx(null)
             return
@@ -332,7 +367,9 @@ export default function NoiseLevelChart() {
         setHoverIdx(bestDx <= HOVER_SNAP_X_PX ? best : null)
     }
 
-    const handlePlotMouseLeave = () => setHoverIdx(null)
+    const handlePlotMouseLeave = () => {
+        if (!zoomDrag) setHoverIdx(null)
+    }
 
     const getNearestSeriesIndex = (innerX, innerY) => {
         if (series.length === 0 || innerX < 0 || innerX > innerW || innerY < 0 || innerY > innerH) {
@@ -424,10 +461,72 @@ export default function NoiseLevelChart() {
     }
 
     const handlePlotClick = (e) => {
+        if (suppressNextClickRef.current) {
+            suppressNextClickRef.current = false
+            return
+        }
         const [innerX, innerY] = d3.pointer(e, e.currentTarget)
         const idx = getNearestSeriesIndex(innerX, innerY)
         if (idx == null) return
         requestClipForBar(idx)
+    }
+
+    const handlePlotPointerDown = (e) => {
+        if (e.button !== 0 || series.length === 0) return
+        const [innerX, innerY] = d3.pointer(e, e.currentTarget)
+        if (innerX < 0 || innerX > innerW || innerY < 0 || innerY > innerH) return
+        e.currentTarget.setPointerCapture?.(e.pointerId)
+        setZoomDrag({
+            startX: clampPlotX(innerX),
+            currentX: clampPlotX(innerX),
+        })
+        setHoverIdx(null)
+    }
+
+    const handlePlotPointerMove = (e) => {
+        if (!zoomDrag) return
+        const [innerX] = d3.pointer(e, e.currentTarget)
+        setZoomDrag((current) =>
+            current
+                ? {
+                      ...current,
+                      currentX: clampPlotX(innerX),
+                  }
+                : current
+        )
+    }
+
+    const handlePlotPointerUp = (e) => {
+        if (!zoomDrag) return
+        e.currentTarget.releasePointerCapture?.(e.pointerId)
+
+        const [releaseX] = d3.pointer(e, e.currentTarget)
+        const startX = clampPlotX(zoomDrag.startX)
+        const endX = clampPlotX(releaseX)
+        const spanPx = Math.abs(endX - startX)
+        setZoomDrag(null)
+
+        if (spanPx < MIN_ZOOM_DRAG_PX) {
+            return
+        }
+
+        const start = xScale.invert(Math.min(startX, endX))
+        const end = xScale.invert(Math.max(startX, endX))
+        if (end.getTime() - start.getTime() < MIN_ZOOM_SPAN_MS) {
+            return
+        }
+
+        suppressNextClickRef.current = true
+        resetChartSelection()
+        setError(null)
+        setRangePickerOpen(false)
+        setZoomApplied({ start, end })
+        setTimeframe('zoom')
+    }
+
+    const handlePlotPointerCancel = (e) => {
+        e.currentTarget.releasePointerCapture?.(e.pointerId)
+        setZoomDrag(null)
     }
 
     const requestClipDelete = (filename) => {
@@ -464,6 +563,7 @@ export default function NoiseLevelChart() {
         setError(null)
         setTimeframe('day')
         setRangePickerOpen(false)
+        setZoomApplied(null)
         setSelectedDay((current) => dayStartLocal(addLocalDays(current, days)))
     }
 
@@ -472,6 +572,7 @@ export default function NoiseLevelChart() {
         setError(null)
         setRangeValidationError(null)
         setRangePickerOpen(false)
+        setZoomApplied(null)
         setSelectedDay(dayStartLocal(new Date()))
         setTimeframe('day')
     }
@@ -520,6 +621,7 @@ export default function NoiseLevelChart() {
             start: dayStartLocal(rangeDraft.start),
             end: dayStartLocal(rangeDraft.end),
         })
+        setZoomApplied(null)
         setTimeframe('range')
         setRangePickerOpen(false)
     }
@@ -543,7 +645,19 @@ export default function NoiseLevelChart() {
         [rangeApplied, selectedDayLabel]
     )
 
-    const activeDateLabel = timeframe === 'range' ? rangeLabel : selectedDayLabel
+    const zoomLabel = useMemo(() => {
+        if (!zoomApplied?.start || !zoomApplied?.end) return ''
+        const fmt = new Intl.DateTimeFormat(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+        })
+        return `${fmt.format(zoomApplied.start)} - ${fmt.format(zoomApplied.end)}`
+    }, [zoomApplied])
+
+    const activeDateLabel =
+        timeframe === 'zoom' ? zoomLabel : timeframe === 'range' ? rangeLabel : selectedDayLabel
 
     const isSelectedDayToday = isSameLocalDay(selectedDay, new Date())
 
@@ -897,8 +1011,8 @@ export default function NoiseLevelChart() {
                             />
                         )
                     })}
-                    {hoverIdx != null && series[hoverIdx] && (
-                        <g pointerEvents="none">
+	                    {hoverIdx != null && series[hoverIdx] && (
+	                        <g pointerEvents="none">
                             <line
                                 x1={xScale(series[hoverIdx].t)}
                                 x2={xScale(series[hoverIdx].t)}
@@ -944,19 +1058,49 @@ export default function NoiseLevelChart() {
                                     {xTickFormatFn(series[hoverIdx].t)}
                                 </text>
                             </g>
+	                        </g>
+	                    )}
+                    {zoomSelection && (
+                        <g pointerEvents="none">
+                            <rect
+                                x={zoomSelection.x}
+                                y={0}
+                                width={zoomSelection.width}
+                                height={innerH}
+                                fill="#f59e0b"
+                                fillOpacity={0.18}
+                                stroke="#fbbf24"
+                                strokeWidth={1.5}
+                                strokeDasharray="6 4"
+                            />
+                            <text
+                                x={zoomSelection.x + zoomSelection.width / 2}
+                                y={16}
+                                textAnchor="middle"
+                                fill="#fde68a"
+                                fontSize={11}
+                                fontWeight={700}
+                            >
+                                {zoomSelection.label}
+                            </text>
                         </g>
                     )}
-                    <rect
-                        x={0}
-                        y={0}
-                        width={innerW}
-                        height={innerH}
-                        fill="transparent"
-                        cursor="pointer"
-                        onMouseMove={handlePlotMouseMove}
-                        onMouseLeave={handlePlotMouseLeave}
-                        onClick={handlePlotClick}
-                    />
+	                    <rect
+	                        x={0}
+	                        y={0}
+	                        width={innerW}
+	                        height={innerH}
+	                        fill="transparent"
+	                        cursor={zoomDrag ? 'col-resize' : 'crosshair'}
+	                        onMouseMove={handlePlotMouseMove}
+	                        onMouseLeave={handlePlotMouseLeave}
+	                        onClick={handlePlotClick}
+                            onPointerDown={handlePlotPointerDown}
+                            onPointerMove={handlePlotPointerMove}
+                            onPointerUp={handlePlotPointerUp}
+                            onPointerCancel={handlePlotPointerCancel}
+                            style={{ touchAction: 'none' }}
+	                    />
                     {yScale.ticks(6).map((tick) => (
                         <text
                             key={`yt-${tick}`}
