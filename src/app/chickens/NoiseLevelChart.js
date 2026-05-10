@@ -95,6 +95,58 @@ const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const HOVER_SNAP_X_PX = 36
 const MIN_ZOOM_DRAG_PX = 16
 const MIN_ZOOM_SPAN_MS = BIN_MINUTES * 60 * 1000
+const NOISE_CACHE_PREFIX = 'gardenmate:noise:v1:'
+const LIVE_CACHE_TTL_MS = REFRESH_MS
+const HISTORICAL_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const LIVE_RANGE_GRACE_MS = REFRESH_MS * 2
+const noiseCache = new Map()
+
+function getNoiseCacheEntry(key) {
+    if (!key) return null
+
+    const memoryEntry = noiseCache.get(key)
+    if (memoryEntry) return memoryEntry
+
+    if (typeof window === 'undefined') return null
+
+    try {
+        const stored = window.sessionStorage.getItem(`${NOISE_CACHE_PREFIX}${key}`)
+        if (!stored) return null
+        const parsed = JSON.parse(stored)
+        if (!parsed || !parsed.payload || !Number.isFinite(parsed.cachedAt)) return null
+        noiseCache.set(key, parsed)
+        return parsed
+    } catch {
+        return null
+    }
+}
+
+function setNoiseCacheEntry(key, payload) {
+    if (!key || !payload) return
+
+    const entry = {
+        cachedAt: Date.now(),
+        payload,
+    }
+    noiseCache.set(key, entry)
+
+    if (typeof window === 'undefined') return
+
+    try {
+        window.sessionStorage.setItem(`${NOISE_CACHE_PREFIX}${key}`, JSON.stringify(entry))
+    } catch {
+        // Browser storage may be full or unavailable; the in-memory cache still helps.
+    }
+}
+
+function buildNoiseCacheKey(start, end, isLiveRange) {
+    const stableEnd = isLiveRange ? 'live' : formatUtcISOZ(end)
+    return `${formatUtcISOZ(start)}|${stableEnd}|${BIN_MINUTES}`
+}
+
+function isLiveNoiseRange(end) {
+    return Date.now() - end.getTime() < LIVE_RANGE_GRACE_MS
+}
 
 export default function NoiseLevelChart() {
     const [payload, setPayload] = useState(null)
@@ -150,11 +202,28 @@ export default function NoiseLevelChart() {
                 end = isSameLocalDay(start, now) ? now : nextDay
             }
 
+            const url = buildNoiseUrl(start, end)
+            const isLiveRange = isLiveNoiseRange(end)
+            const cacheKey = buildNoiseCacheKey(start, end, isLiveRange)
+            const cacheTtl = isLiveRange ? LIVE_CACHE_TTL_MS : HISTORICAL_CACHE_TTL_MS
+            const cached = getNoiseCacheEntry(cacheKey)
+            const isCacheFresh = cached && Date.now() - cached.cachedAt < cacheTtl
+
+            if (cached) {
+                setPayload(cached.payload)
+                setError(null)
+                setLoading(false)
+                firstFetchEverRef.current = false
+            }
+
+            if (isCacheFresh) {
+                setIsRefreshing(false)
+                return
+            }
+
             const isFirstEver = firstFetchEverRef.current
             if (isFirstEver) setLoading(true)
             else setIsRefreshing(true)
-
-            const url = buildNoiseUrl(start, end)
 
             fetch(url)
                 .then((res) => {
@@ -163,6 +232,7 @@ export default function NoiseLevelChart() {
                 })
                 .then((json) => {
                     if (!cancelled) {
+                        setNoiseCacheEntry(cacheKey, json)
                         setPayload(json)
                         setError(null)
                         firstFetchEverRef.current = false
