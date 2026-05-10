@@ -8,6 +8,7 @@ const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenma
 const NVR_CLIPS_API = `${APP_BASE_PATH}/api/nvr-clips`
 const DEFAULT_CAMERA_ID =
     process.env.NEXT_PUBLIC_GARDEN_CAMERA_ID || '677930230377fe03e4001fa9'
+const NVR_CLIP_LIVE_GUARD_MS = 15 * 1000
 
 /** Poll interval for live updates */
 const REFRESH_MS = 60 * 1000
@@ -80,6 +81,12 @@ function buildNoiseUrl(start, end) {
         bin_minutes: String(BIN_MINUTES),
     })
     return `${NOISE_API}?${q.toString()}`
+}
+
+function clampClipRequestTime(d) {
+    const requestedMs = d.getTime()
+    if (!Number.isFinite(requestedMs)) return new Date(Date.now() - NVR_CLIP_LIVE_GUARD_MS)
+    return new Date(Math.min(requestedMs, Date.now() - NVR_CLIP_LIVE_GUARD_MS))
 }
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -399,7 +406,7 @@ export default function NoiseLevelChart() {
 
         const controller = new AbortController()
         clipRequestRef.current = controller
-        const requestedAt = point.t.toISOString()
+        const requestedAt = clampClipRequestTime(point.t).toISOString()
 
         setClipPanel({
             idx,
@@ -898,19 +905,21 @@ export default function NoiseLevelChart() {
             {dayNavigationControls}
             {timeframeControls}
             {rangePicker}
-            <div className="absolute right-6 top-32 z-10 w-44 rounded-lg border border-slate-700/80 bg-slate-950/85 px-3 py-2 text-right shadow-lg ring-1 ring-black/20">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-300">
-                    RMS
-                </p>
-                <p className="text-sm font-semibold text-slate-100">
-                    {hoverPoint?.rms != null && Number.isFinite(hoverPoint.rms)
-                        ? `${Number(hoverPoint.rms).toFixed(2)} dB`
-                        : '—'}
-                </p>
-                <p className="mt-0.5 text-[10px] text-slate-400">
-                    {hoverPoint ? xTickFormatFn(hoverPoint.t) : 'Hover a bar'}
-                </p>
-            </div>
+            {hoverPoint && (
+                <div className="absolute right-6 top-32 z-10 w-44 rounded-lg border border-slate-700/80 bg-slate-950/85 px-3 py-2 text-right shadow-lg ring-1 ring-black/20">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                        RMS
+                    </p>
+                    <p className="text-sm font-semibold text-slate-100">
+                        {hoverPoint.rms != null && Number.isFinite(hoverPoint.rms)
+                            ? `${Number(hoverPoint.rms).toFixed(2)} dB`
+                            : '—'}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-slate-400">
+                        {xTickFormatFn(hoverPoint.t)}
+                    </p>
+                </div>
+            )}
             {error && payload && (
                 <p className="mb-3 text-sm text-red-300">Could not refresh noise data: {error}</p>
             )}

@@ -3,6 +3,28 @@ import { NextResponse } from 'next/server'
 const CLIP_API_URL =
     process.env.GARDEN_NVR_CLIPS_API_URL || 'https://bengarlock.com/api/v1/garden/nvr-clips/'
 const GARDEN_API_TOKEN = process.env.GARDEN_API_TOKEN || ''
+const CLIP_LIVE_GUARD_MS = 15 * 1000
+
+function clampClipPayload(payload) {
+    if (!payload || typeof payload !== 'object' || typeof payload.at !== 'string') {
+        return payload
+    }
+
+    const requestedMs = Date.parse(payload.at)
+    if (!Number.isFinite(requestedMs)) {
+        return payload
+    }
+
+    const latestSafeMs = Date.now() - CLIP_LIVE_GUARD_MS
+    if (requestedMs <= latestSafeMs) {
+        return payload
+    }
+
+    return {
+        ...payload,
+        at: new Date(latestSafeMs).toISOString(),
+    }
+}
 
 export async function POST(request) {
     let payload
@@ -19,7 +41,7 @@ export async function POST(request) {
             ...(GARDEN_API_TOKEN ? { Authorization: `Token ${GARDEN_API_TOKEN}` } : {}),
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(clampClipPayload(payload)),
         cache: 'no-store',
     })
 
