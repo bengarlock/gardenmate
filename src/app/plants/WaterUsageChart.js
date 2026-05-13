@@ -273,6 +273,7 @@ export default function WaterUsageChart() {
     const barWidth = Math.max(8, Math.min(42, innerW / Math.max(series.length, 1) * 0.56))
     const hoverPoint = hoverIdx != null ? series[hoverIdx] : null
 
+
     const rangePicker = rangePickerOpen ? (
         <div className="absolute left-1/2 top-28 z-30 w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-sky-700/80 bg-blue-950/95 p-3 shadow-2xl ring-1 ring-sky-300/20">
             <div className="mb-3 grid grid-cols-[2rem_1fr_2rem] items-center gap-3">
@@ -479,6 +480,9 @@ export default function WaterUsageChart() {
                             </p>
                             <p className="text-lg font-semibold text-white">
                                 {hoverPoint.gallons.toFixed(1)} gal
+                            </p>
+                            <p className="text-xs text-sky-200">
+                                {hoverPoint.runtime} min
                             </p>
                             <p className="text-xs text-sky-200">
                                 {d3.timeFormat('%b %-d · %-I:%M %p')(hoverPoint.t)}
