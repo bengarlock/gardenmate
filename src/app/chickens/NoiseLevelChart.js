@@ -161,6 +161,7 @@ export default function NoiseLevelChart() {
     const [rangePickerOpen, setRangePickerOpen] = useState(false)
     const [calendarMonth, setCalendarMonth] = useState(() => monthStartLocal(new Date()))
     const [zoomApplied, setZoomApplied] = useState(null)
+    const [viewHistory, setViewHistory] = useState([])
     const [zoomDrag, setZoomDrag] = useState(null)
     const [rangeValidationError, setRangeValidationError] = useState(null)
     const [clipPanel, setClipPanel] = useState(null)
@@ -597,6 +598,25 @@ export default function NoiseLevelChart() {
         resetChartSelection()
         setError(null)
         setRangePickerOpen(false)
+        setViewHistory((current) => [
+            ...current,
+            {
+                timeframe,
+                selectedDay: new Date(selectedDay),
+                rangeApplied: rangeApplied
+                    ? {
+                          start: new Date(rangeApplied.start),
+                          end: new Date(rangeApplied.end),
+                      }
+                    : null,
+                zoomApplied: zoomApplied
+                    ? {
+                          start: new Date(zoomApplied.start),
+                          end: new Date(zoomApplied.end),
+                      }
+                    : null,
+            },
+        ])
         setZoomApplied({ start, end })
         setTimeframe('zoom')
     }
@@ -635,12 +655,42 @@ export default function NoiseLevelChart() {
         handleCloseClipPanel()
     }
 
+    const handleBackToPreviousView = () => {
+        const previous = viewHistory[viewHistory.length - 1]
+        if (!previous) return
+
+        resetChartSelection()
+        setError(null)
+        setRangeValidationError(null)
+        setRangePickerOpen(false)
+        setViewHistory((current) => current.slice(0, -1))
+        setSelectedDay(dayStartLocal(previous.selectedDay))
+        setRangeApplied(
+            previous.rangeApplied
+                ? {
+                      start: dayStartLocal(previous.rangeApplied.start),
+                      end: dayStartLocal(previous.rangeApplied.end),
+                  }
+                : null
+        )
+        setZoomApplied(
+            previous.zoomApplied
+                ? {
+                      start: new Date(previous.zoomApplied.start),
+                      end: new Date(previous.zoomApplied.end),
+                  }
+                : null
+        )
+        setTimeframe(previous.timeframe)
+    }
+
     const handleDayStep = (days) => {
         resetChartSelection()
         setError(null)
         setTimeframe('day')
         setRangePickerOpen(false)
         setZoomApplied(null)
+        setViewHistory([])
         setSelectedDay((current) => dayStartLocal(addLocalDays(current, days)))
     }
 
@@ -650,6 +700,7 @@ export default function NoiseLevelChart() {
         setRangeValidationError(null)
         setRangePickerOpen(false)
         setZoomApplied(null)
+        setViewHistory([])
         setSelectedDay(dayStartLocal(new Date()))
         setTimeframe('day')
     }
@@ -699,6 +750,7 @@ export default function NoiseLevelChart() {
             end: dayStartLocal(rangeDraft.end),
         })
         setZoomApplied(null)
+        setViewHistory([])
         setTimeframe('range')
         setRangePickerOpen(false)
     }
@@ -737,6 +789,7 @@ export default function NoiseLevelChart() {
         timeframe === 'zoom' ? zoomLabel : timeframe === 'range' ? rangeLabel : selectedDayLabel
 
     const isSelectedDayToday = isSameLocalDay(selectedDay, new Date())
+    const canGoBack = viewHistory.length > 0
 
     const calendarCells = useMemo(() => {
         const firstOfMonth = monthStartLocal(calendarMonth)
@@ -775,8 +828,18 @@ export default function NoiseLevelChart() {
     )
 
     const dayNavigationControls = (
-        <div className="mb-3 flex flex-wrap items-center justify-center gap-2 pt-4">
-            {timeframe === 'day' ? (
+        <div className="mx-auto mb-3 grid w-full max-w-[28.5rem] grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center justify-center gap-2 pt-4">
+            {canGoBack ? (
+                <button
+                    type="button"
+                    onClick={handleBackToPreviousView}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-700/80 text-lg leading-none text-slate-100 transition-colors hover:bg-slate-600/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+                    aria-label="Return to previous chart view"
+                    title="Back"
+                >
+                    ←
+                </button>
+            ) : timeframe === 'day' ? (
                 <button
                     type="button"
                     onClick={() => handleDayStep(-1)}
@@ -792,9 +855,10 @@ export default function NoiseLevelChart() {
             <button
                 type="button"
                 onClick={openRangePicker}
-                className="min-h-9 min-w-[13rem] rounded-lg px-3 text-center text-sm font-semibold text-slate-100 transition-colors hover:bg-slate-700/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+                className="h-9 w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-lg px-3 text-center text-sm font-semibold leading-9 text-slate-100 transition-colors hover:bg-slate-700/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
                 aria-expanded={rangePickerOpen}
                 aria-label="Choose date range"
+                title={activeDateLabel}
             >
                 {activeDateLabel}
             </button>
@@ -817,7 +881,7 @@ export default function NoiseLevelChart() {
 
     const rangePicker = rangePickerOpen ? (
         <div className="absolute left-1/2 top-28 z-30 w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-slate-700/80 bg-slate-900/95 p-3 shadow-2xl ring-1 ring-black/30">
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-3 grid grid-cols-[2rem_1fr_2rem] items-center gap-3">
                 <button
                     type="button"
                     onClick={() => setCalendarMonth((current) => addLocalMonths(current, -1))}
@@ -827,7 +891,9 @@ export default function NoiseLevelChart() {
                 >
                     ‹
                 </button>
-                <div className="text-sm font-semibold text-slate-100">{calendarMonthLabel}</div>
+                <div className="text-center text-sm font-semibold text-slate-100">
+                    {calendarMonthLabel}
+                </div>
                 <button
                     type="button"
                     onClick={() => setCalendarMonth((current) => addLocalMonths(current, 1))}
