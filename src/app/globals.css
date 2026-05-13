@@ -6,9 +6,9 @@
 body {
     background-color: #848d85;
     background-image: url("media/background.jpg");
+    background-attachment: fixed;
     background-size: cover;
     background-position: center;
-
 }
 
 

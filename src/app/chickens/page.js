@@ -5,20 +5,20 @@ import NoiseLevelChart from "@/app/chickens/NoiseLevelChart";
 const Chickens = () => {
 
     return (
-        <div className="flex min-h-screen w-full flex-col bg-gradient-to-b from-slate-700/95 to-slate-800 pb-8 md:pb-12">
-            <header className="mx-auto w-full max-w-4xl px-4 pb-6 pt-8 text-center md:pb-8 md:pt-10">
-                <h1 className="text-3xl font-bold tracking-tight text-slate-50 drop-shadow-sm md:text-5xl">
-                    Chickens
-                </h1>
-                <div
-                    className="mx-auto mt-5 h-1 w-16 rounded-full bg-gradient-to-r from-amber-300/80 to-amber-500/60"
-                    aria-hidden
-                />
-            </header>
-            <div className="flex w-full justify-center px-3 sm:px-4">
+        <main className="min-h-screen w-full bg-stone-950/80 text-stone-50">
+            <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+                <header className="flex flex-col gap-2 border-b border-white/10 pb-5">
+                    <p className="text-sm font-semibold uppercase text-emerald-300">
+                        Garden dashboard
+                    </p>
+                    <h1 className="text-3xl font-semibold text-white md:text-5xl">
+                        Chickens
+                    </h1>
+                </header>
+
                 <NoiseLevelChart />
             </div>
-        </div>
+        </main>
     )
 }
 

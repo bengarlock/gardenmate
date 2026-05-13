@@ -4,39 +4,50 @@ import Countdown from "@/app/components/Countdown"
 
 export default function Home() {
     return (
-        <main className="flex min-h-[calc(100vh-116px)] w-full items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900 px-4 py-8 md:min-h-screen">
-            <div className="grid w-full max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2 md:gap-6">
+        <main className="min-h-screen w-full bg-stone-950/80 text-stone-50">
+            <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+                <header className="flex flex-col gap-2 border-b border-white/10 pb-5">
+                    <p className="text-sm font-semibold uppercase text-emerald-300">
+                        Garden dashboard
+                    </p>
+                    <h1 className="text-3xl font-semibold text-white md:text-5xl">
+                        Home
+                    </h1>
+                </header>
 
-                {/* Countdown Card */}
-                <div className="group w-full rounded-xl bg-blue-900/90 shadow-xl
-                        transition-all duration-300 hover:shadow-2xl md:hover:scale-105">
-                    <div className="flex h-full min-h-40 flex-col p-5 sm:p-6">
-                        <h1 className="text-lg font-semibold text-blue-100 tracking-wide mb-4">
-                            🌱 Countdown Till Planting Day
-                        </h1>
+                <section className="grid gap-3 md:grid-cols-2">
+                    <div className="group min-h-36 rounded-lg border border-white/10 bg-stone-900/80 p-5 shadow-xl transition hover:border-emerald-300/70 hover:bg-stone-900">
+                        <div className="flex items-start justify-between gap-4">
+                            <h2 className="text-xl font-semibold text-white">
+                                Countdown Till Planting Day
+                            </h2>
+                            <span className="rounded-full border border-emerald-300/40 px-3 py-1 text-xs font-semibold uppercase text-emerald-200">
+                                Track
+                            </span>
+                        </div>
 
-                        <div className="flex-grow flex items-center justify-center">
-                            <div className="text-center font-mono text-xl leading-relaxed text-white sm:text-2xl">
+                        <div className="mt-6 flex min-h-16 items-center">
+                            <div className="font-mono text-xl leading-relaxed text-white sm:text-2xl">
                                 <Countdown date={new Date('2026-05-02')} />
                             </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Weather Card */}
-                <div className="group w-full rounded-xl bg-blue-900/90 shadow-xl
-                        transition-all duration-300 hover:shadow-2xl md:hover:scale-105">
-                    <div className="flex h-full min-h-40 flex-col p-5 sm:p-6">
-                        <h1 className="text-lg font-semibold text-blue-100 tracking-wide mb-4">
-                            ☁️ Weather
-                        </h1>
+                    <div className="group min-h-36 rounded-lg border border-white/10 bg-stone-900/80 p-5 shadow-xl transition hover:border-emerald-300/70 hover:bg-stone-900">
+                        <div className="flex items-start justify-between gap-4">
+                            <h2 className="text-xl font-semibold text-white">
+                                Weather
+                            </h2>
+                            <span className="rounded-full border border-emerald-300/40 px-3 py-1 text-xs font-semibold uppercase text-emerald-200">
+                                Live
+                            </span>
+                        </div>
 
-                        <div className="flex-grow flex items-center justify-center text-2xl text-white">
+                        <div className="mt-6 min-h-16 text-2xl text-white">
                             <Weather />
                         </div>
                     </div>
-                </div>
-
+                </section>
             </div>
         </main>
     )
