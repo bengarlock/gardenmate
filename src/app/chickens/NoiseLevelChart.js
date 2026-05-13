@@ -822,7 +822,7 @@ export default function NoiseLevelChart() {
                         : 'bg-slate-700/80 text-slate-200 hover:bg-slate-600/90'
                 }`}
             >
-                Today
+                Now
             </button>
         </div>
     )
