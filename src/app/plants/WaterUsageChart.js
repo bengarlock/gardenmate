@@ -66,6 +66,7 @@ function buildWaterUrl(start, end) {
 export default function WaterUsageChart() {
     const firstFetchRef = useRef(true)
     const [payload, setPayload] = useState(null)
+    const [payloadRange, setPayloadRange] = useState(null)
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
     const [error, setError] = useState(null)
@@ -107,6 +108,10 @@ export default function WaterUsageChart() {
             .then((json) => {
                 if (!cancelled) {
                     setPayload(json)
+                    setPayloadRange({
+                        start: dayStartLocal(currentRange.start),
+                        end: dayStartLocal(currentRange.end),
+                    })
                     firstFetchRef.current = false
                 }
             })
@@ -246,12 +251,13 @@ export default function WaterUsageChart() {
     const height = 330
     const innerW = width - margin.left - margin.right
     const innerH = height - margin.top - margin.bottom
+    const chartRange = payloadRange ?? currentRange
 
     const xDomain = useMemo(() => {
-        const start = dayStartLocal(currentRange.start)
-        const end = addLocalDays(dayStartLocal(currentRange.end), 1)
+        const start = dayStartLocal(chartRange.start)
+        const end = addLocalDays(dayStartLocal(chartRange.end), 1)
         return [start, end]
-    }, [currentRange])
+    }, [chartRange])
 
     const xScale = useMemo(
         () => d3.scaleTime().domain(xDomain).range([0, innerW]),
