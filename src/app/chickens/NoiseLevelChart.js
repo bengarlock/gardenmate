@@ -753,6 +753,7 @@ export default function NoiseLevelChart() {
                                 : null,
                         source_device_identifier: NOISE_BIN_SOURCE,
                         notes: 'Reviewed from GardenMate chickens noise chart.',
+                        nvr_clip_filename: clipPanel?.filename ?? '',
                     }),
                     cache: 'no-store',
                 })
@@ -772,6 +773,7 @@ export default function NoiseLevelChart() {
                 body: JSON.stringify({
                     human_label: humanLabel,
                     notes: event.notes || 'Reviewed from GardenMate chickens noise chart.',
+                    nvr_clip_filename: clipPanel?.filename ?? '',
                 }),
                 cache: 'no-store',
             })
