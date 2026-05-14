@@ -473,13 +473,21 @@ export default function NoiseLevelChart() {
         return key ? audioEventsByTimeKey[key] ?? null : null
     }
 
-    const isPointMarkedNotChicken = (point) => {
+    const getPointHumanLabel = (point) => {
         const event = getAudioEventForPoint(point)
-        return event?.human_label === 'not_chicken' || event?.human_label === 'ignored'
+        return event?.human_label ?? null
     }
 
-    const getBarFill = (point) => (isPointMarkedNotChicken(point) ? '#64748b' : 'url(#noiseBarFill)')
-    const getBarOpacity = (point) => (isPointMarkedNotChicken(point) ? 0.55 : 0.92)
+    const getBarFill = (point) => {
+        const humanLabel = getPointHumanLabel(point)
+        if (humanLabel === 'chicken') return '#ef4444'
+        if (humanLabel === 'not_chicken' || humanLabel === 'unsure' || humanLabel === 'ignored') {
+            return '#64748b'
+        }
+        return 'url(#noiseBarFill)'
+    }
+
+    const getBarOpacity = (point) => (getPointHumanLabel(point) ? 0.72 : 0.92)
 
     const zoomSelection =
         zoomDrag && Math.abs(zoomDrag.currentX - zoomDrag.startX) >= MIN_ZOOM_DRAG_PX
