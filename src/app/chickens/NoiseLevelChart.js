@@ -4,10 +4,12 @@ import * as d3 from 'd3'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 const NOISE_API = 'https://bengarlock.com/api/v1/garden/noise/'
+const CHICKEN_AUDIO_EVENTS_API = 'https://bengarlock.com/api/v1/garden/chicken-audio-events/'
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
 const NVR_CLIPS_API = `${APP_BASE_PATH}/api/nvr-clips`
 const DEFAULT_CAMERA_ID =
     process.env.NEXT_PUBLIC_GARDEN_CAMERA_ID || '677930230377fe03e4001fa9'
+const NOISE_BIN_SOURCE = 'gardenmate-noise-bin'
 const NVR_CLIP_LIVE_GUARD_MS = 15 * 1000
 
 /** Poll interval for live updates */
@@ -81,6 +83,26 @@ function buildNoiseUrl(start, end) {
         bin_minutes: String(BIN_MINUTES),
     })
     return `${NOISE_API}?${q.toString()}`
+}
+
+function buildChickenAudioEventsUrl(start, end) {
+    const q = new URLSearchParams({
+        start: formatUtcISOZ(start),
+        end: formatUtcISOZ(end),
+        source_device_identifier: NOISE_BIN_SOURCE,
+        limit: '1000',
+    })
+    return `${CHICKEN_AUDIO_EVENTS_API}?${q.toString()}`
+}
+
+function eventLabelUrl(eventId) {
+    return `${CHICKEN_AUDIO_EVENTS_API}${eventId}/human-label/`
+}
+
+function audioEventTimeKey(value) {
+    const time = value instanceof Date ? value.getTime() : new Date(value).getTime()
+    if (!Number.isFinite(time)) return null
+    return String(Math.round(time / 1000))
 }
 
 function clampClipRequestTime(d) {
@@ -165,6 +187,9 @@ export default function NoiseLevelChart() {
     const [zoomDrag, setZoomDrag] = useState(null)
     const [rangeValidationError, setRangeValidationError] = useState(null)
     const [clipPanel, setClipPanel] = useState(null)
+    const [audioEventsByTimeKey, setAudioEventsByTimeKey] = useState({})
+    const [audioEventError, setAudioEventError] = useState(null)
+    const [labelSavingKey, setLabelSavingKey] = useState(null)
     const firstFetchEverRef = useRef(true)
     const clipRequestRef = useRef(null)
     const suppressNextClickRef = useRef(false)
@@ -341,6 +366,47 @@ export default function NoiseLevelChart() {
         return [t0, t1]
     }, [series])
 
+    useEffect(() => {
+        if (series.length === 0) {
+            setAudioEventsByTimeKey({})
+            return
+        }
+
+        let cancelled = false
+        const halfBinMs = (BIN_MINUTES * 60 * 1000) / 2
+        const start = new Date(xDomain[0].getTime() - halfBinMs)
+        const end = new Date(xDomain[1].getTime() + halfBinMs)
+
+        fetch(buildChickenAudioEventsUrl(start, end), {
+            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+        })
+            .then((res) => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`)
+                return res.json()
+            })
+            .then((json) => {
+                if (cancelled) return
+                const rows = Array.isArray(json.results) ? json.results : []
+                const next = {}
+                rows.forEach((event) => {
+                    const key = audioEventTimeKey(event.recorded_at)
+                    if (key) next[key] = event
+                })
+                setAudioEventsByTimeKey(next)
+                setAudioEventError(null)
+            })
+            .catch((e) => {
+                if (!cancelled) {
+                    setAudioEventError(e.message ?? String(e))
+                }
+            })
+
+        return () => {
+            cancelled = true
+        }
+    }, [series.length, xDomain])
+
     const xScale = useMemo(
         () => d3.scaleTime().domain(xDomain).range([0, innerW]),
         [xDomain, innerW]
@@ -402,6 +468,18 @@ export default function NoiseLevelChart() {
 
     const formatDbTick = (v) => `${d3.format('.1f')(v)} dB`
     const clampPlotX = (x) => Math.min(innerW, Math.max(0, x))
+    const getAudioEventForPoint = (point) => {
+        const key = point ? audioEventTimeKey(point.t) : null
+        return key ? audioEventsByTimeKey[key] ?? null : null
+    }
+
+    const isPointMarkedNotChicken = (point) => {
+        const event = getAudioEventForPoint(point)
+        return event?.human_label === 'not_chicken' || event?.human_label === 'ignored'
+    }
+
+    const getBarFill = (point) => (isPointMarkedNotChicken(point) ? '#64748b' : 'url(#noiseBarFill)')
+    const getBarOpacity = (point) => (isPointMarkedNotChicken(point) ? 0.55 : 0.92)
 
     const zoomSelection =
         zoomDrag && Math.abs(zoomDrag.currentX - zoomDrag.startX) >= MIN_ZOOM_DRAG_PX
@@ -639,6 +717,70 @@ export default function NoiseLevelChart() {
         }).catch(() => {
             // Best-effort cleanup; the popup should still close even if deletion fails.
         })
+    }
+
+    const saveHumanLabelForPoint = async (point, humanLabel) => {
+        const key = audioEventTimeKey(point?.t)
+        if (!point || !key || labelSavingKey) return
+
+        setLabelSavingKey(key)
+        setAudioEventError(null)
+
+        try {
+            let event = audioEventsByTimeKey[key]
+
+            if (!event?.id) {
+                const createResponse = await fetch(CHICKEN_AUDIO_EVENTS_API, {
+                    method: 'POST',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        recorded_at: formatUtcISOZ(point.t),
+                        duration_seconds: String(BIN_MINUTES * 60),
+                        max_decibel_level:
+                            point.rms != null && Number.isFinite(point.rms)
+                                ? Number(point.rms).toFixed(2)
+                                : null,
+                        source_device_identifier: NOISE_BIN_SOURCE,
+                        notes: 'Reviewed from GardenMate chickens noise chart.',
+                    }),
+                    cache: 'no-store',
+                })
+                const created = await createResponse.json().catch(() => ({}))
+                if (!createResponse.ok) {
+                    throw new Error(created.message || created.detail || `HTTP ${createResponse.status}`)
+                }
+                event = created
+            }
+
+            const updateResponse = await fetch(eventLabelUrl(event.id), {
+                method: 'PATCH',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    human_label: humanLabel,
+                    notes: event.notes || 'Reviewed from GardenMate chickens noise chart.',
+                }),
+                cache: 'no-store',
+            })
+            const updated = await updateResponse.json().catch(() => ({}))
+            if (!updateResponse.ok) {
+                throw new Error(updated.message || updated.detail || `HTTP ${updateResponse.status}`)
+            }
+
+            setAudioEventsByTimeKey((current) => ({
+                ...current,
+                [key]: updated,
+            }))
+        } catch (e) {
+            setAudioEventError(e.message ?? String(e))
+        } finally {
+            setLabelSavingKey(null)
+        }
     }
 
     const handleCloseClipPanel = () => {
@@ -1023,6 +1165,10 @@ export default function NoiseLevelChart() {
 
     const selectedPoint =
         clipPanel && series[clipPanel.idx] ? series[clipPanel.idx] : null
+    const selectedAudioEvent = selectedPoint ? getAudioEventForPoint(selectedPoint) : null
+    const selectedAudioEventKey = selectedPoint ? audioEventTimeKey(selectedPoint.t) : null
+    const selectedHumanLabel = selectedAudioEvent?.human_label ?? null
+    const selectedLabelSaving = selectedAudioEventKey && labelSavingKey === selectedAudioEventKey
 
     const clipPanelStyle = selectedPoint
         ? {
@@ -1054,10 +1200,18 @@ export default function NoiseLevelChart() {
                     <p className="mt-0.5 text-[10px] text-slate-400">
                         {xTickFormatFn(hoverPoint.t)}
                     </p>
+                    {getAudioEventForPoint(hoverPoint)?.human_label && (
+                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                            {getAudioEventForPoint(hoverPoint).human_label.replace('_', ' ')}
+                        </p>
+                    )}
                 </div>
             )}
             {error && payload && (
                 <p className="mb-3 text-sm text-red-300">Could not refresh noise data: {error}</p>
+            )}
+            {audioEventError && (
+                <p className="mb-3 text-sm text-red-300">Could not save chicken review: {audioEventError}</p>
             )}
             <div className="relative">
                 {isRefreshing && (
@@ -1113,6 +1267,45 @@ export default function NoiseLevelChart() {
                                 className="aspect-video w-full rounded-md bg-black"
                             />
                         )}
+                        <div className="mt-3 border-t border-slate-800 pt-3">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                Mark this noise
+                            </p>
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    ['chicken', 'Chicken'],
+                                    ['not_chicken', 'Not chicken'],
+                                    ['unsure', 'Unsure'],
+                                    ['ignored', 'Ignore'],
+                                ].map(([value, label]) => {
+                                    const selected = selectedHumanLabel === value
+                                    const isGreyAction = value === 'not_chicken' || value === 'ignored'
+                                    return (
+                                        <button
+                                            key={value}
+                                            type="button"
+                                            onClick={() => saveHumanLabelForPoint(selectedPoint, value)}
+                                            disabled={Boolean(selectedLabelSaving)}
+                                            aria-pressed={selected}
+                                            className={`rounded-md px-2 py-2 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 disabled:cursor-wait disabled:opacity-60 ${
+                                                selected
+                                                    ? isGreyAction
+                                                        ? 'bg-slate-500 text-white'
+                                                        : 'bg-amber-500 text-slate-950'
+                                                    : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
+                                            }`}
+                                        >
+                                            {selectedLabelSaving ? 'Saving…' : label}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                            {selectedHumanLabel && (
+                                <p className="mt-2 text-xs text-slate-400">
+                                    Saved as {selectedHumanLabel.replace('_', ' ')}.
+                                </p>
+                            )}
+                        </div>
                     </div>
                 )}
                 <svg
@@ -1162,9 +1355,9 @@ export default function NoiseLevelChart() {
                                 y={yTop}
                                 width={barWidthPx}
                                 height={h}
-                                fill="url(#noiseBarFill)"
+                                fill={getBarFill(d)}
                                 rx={2}
-                                opacity={0.92}
+                                opacity={getBarOpacity(d)}
                                 stroke={clipPanel?.idx === i ? '#f59e0b' : hoverIdx === i ? '#f8fafc' : '#0f172a'}
                                 strokeWidth={clipPanel?.idx === i ? 2 : hoverIdx === i ? 1.5 : 0.5}
                                 strokeOpacity={clipPanel?.idx === i || hoverIdx === i ? 1 : 0.35}
