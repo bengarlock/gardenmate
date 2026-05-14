@@ -5,6 +5,11 @@ import {useEffect, useMemo, useRef, useState} from 'react'
 
 const WATER_USAGE_API = 'https://bengarlock.com/api/v1/garden/water/water-usage/'
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const WATER_COST_PER_100_GALLONS = 1
+const CURRENCY_FORMAT = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: 'USD',
+})
 
 function dayStartLocal(d) {
     const x = new Date(d)
@@ -154,6 +159,7 @@ export default function WaterUsageChart() {
         () => series.reduce((sum, point) => sum + point.gallons, 0),
         [series]
     )
+    const totalWaterCost = totalGallons / 100 * WATER_COST_PER_100_GALLONS
 
     const selectedDayLabel = useMemo(
         () =>
@@ -387,6 +393,9 @@ export default function WaterUsageChart() {
                     <h3 className="text-lg font-semibold text-sky-50">Water Usage</h3>
                     <p className="mt-1 text-sm text-sky-200">
                         {payload?.count ?? 0} events · {totalGallons.toFixed(1)} gal
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-cyan-100">
+                        {CURRENCY_FORMAT.format(totalWaterCost)} water cost
                     </p>
                 </div>
                 <div className="flex flex-wrap justify-start gap-2 md:justify-end">
