@@ -9,7 +9,7 @@ const NavBar = () => {
     const plantsSelected = pathname === '/plants' || pathname.startsWith('/plants/')
 
     return (
-        <nav className="w-full bg-gray-900/85 text-white md:min-h-screen md:w-64 md:shrink-0 lg:w-80">
+        <nav className="fixed left-0 top-0 z-50 w-full bg-gray-900/85 text-white md:h-screen md:w-64 lg:w-80">
             <h1 className="flex w-full justify-center p-3 text-xl font-semibold text-amber-600 md:mb-8">
                 GardenMate
             </h1>
