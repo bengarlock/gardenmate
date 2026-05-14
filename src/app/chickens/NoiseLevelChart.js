@@ -4,9 +4,9 @@ import * as d3 from 'd3'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 const NOISE_API = 'https://bengarlock.com/api/v1/garden/noise/'
-const CHICKEN_AUDIO_EVENTS_API = 'https://bengarlock.com/api/v1/garden/chicken-audio-events/'
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
 const NVR_CLIPS_API = `${APP_BASE_PATH}/api/nvr-clips`
+const CHICKEN_AUDIO_EVENTS_API = `${APP_BASE_PATH}/api/chicken-audio-events`
 const DEFAULT_CAMERA_ID =
     process.env.NEXT_PUBLIC_GARDEN_CAMERA_ID || '677930230377fe03e4001fa9'
 const NOISE_BIN_SOURCE = 'gardenmate-noise-bin'
@@ -96,7 +96,7 @@ function buildChickenAudioEventsUrl(start, end) {
 }
 
 function eventLabelUrl(eventId) {
-    return `${CHICKEN_AUDIO_EVENTS_API}${eventId}/human-label/`
+    return `${CHICKEN_AUDIO_EVENTS_API}/${eventId}/human-label`
 }
 
 function audioEventTimeKey(value) {
