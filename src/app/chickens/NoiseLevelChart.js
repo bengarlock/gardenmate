@@ -17,9 +17,17 @@ const REFRESH_MS = 60 * 1000
 
 /** Fixed backend aggregation window — drives `bin_minutes` query and bar width. */
 const BIN_MINUTES = 5
+const BIN_MS = BIN_MINUTES * 60 * 1000
+const REVIEW_MATCH_TOLERANCE_MS = BIN_MS / 2 + 1000
 
 /** Bar fill gradient: quiet (low dB / more negative) → loud */
 const LEVEL_COLORS = ['#22c55e', '#eab308', '#ef4444', '#a855f7']
+const HUMAN_LABEL_COLORS = {
+    chicken: '#ef4444',
+    not_chicken: '#64748b',
+    unsure: '#64748b',
+    ignored: '#64748b',
+}
 
 /** Fixed RMS chart bounds in dB. */
 const Y_DOMAIN = [-60, -10]
@@ -103,6 +111,15 @@ function audioEventTimeKey(value) {
     const time = value instanceof Date ? value.getTime() : new Date(value).getTime()
     if (!Number.isFinite(time)) return null
     return String(Math.round(time / 1000))
+}
+
+function audioEventTimeMs(event) {
+    const time = event?.recorded_at ? new Date(event.recorded_at).getTime() : NaN
+    return Number.isFinite(time) ? time : null
+}
+
+function humanLabelColor(humanLabel) {
+    return HUMAN_LABEL_COLORS[humanLabel] ?? null
 }
 
 function clampClipRequestTime(d) {
@@ -193,6 +210,7 @@ export default function NoiseLevelChart() {
     const firstFetchEverRef = useRef(true)
     const clipRequestRef = useRef(null)
     const suppressNextClickRef = useRef(false)
+    const clipVideoRef = useRef(null)
 
     useEffect(() => {
         return () => {
@@ -201,6 +219,14 @@ export default function NoiseLevelChart() {
             }
         }
     }, [])
+
+    useEffect(() => {
+        if (clipPanel?.status !== 'ready' || !clipPanel.clipUrl || !clipVideoRef.current) return
+
+        clipVideoRef.current.play().catch(() => {
+            // Some browsers block autoplay with sound; the controls remain visible.
+        })
+    }, [clipPanel?.status, clipPanel?.clipUrl])
 
     useEffect(() => {
         let cancelled = false
@@ -360,7 +386,7 @@ export default function NoiseLevelChart() {
         const t0 = series[0].t
         const t1 = series[series.length - 1].t
         if (t0.getTime() === t1.getTime()) {
-            const padMs = (BIN_MINUTES * 60 * 1000) / 2
+            const padMs = BIN_MS / 2
             return [new Date(t0.getTime() - padMs), new Date(t1.getTime() + padMs)]
         }
         return [t0, t1]
@@ -373,7 +399,7 @@ export default function NoiseLevelChart() {
         }
 
         let cancelled = false
-        const halfBinMs = (BIN_MINUTES * 60 * 1000) / 2
+        const halfBinMs = BIN_MS / 2
         const start = new Date(xDomain[0].getTime() - halfBinMs)
         const end = new Date(xDomain[1].getTime() + halfBinMs)
 
@@ -406,6 +432,11 @@ export default function NoiseLevelChart() {
             cancelled = true
         }
     }, [series.length, xDomain])
+
+    const audioEvents = useMemo(
+        () => Object.values(audioEventsByTimeKey).filter(Boolean),
+        [audioEventsByTimeKey]
+    )
 
     const xScale = useMemo(
         () => d3.scaleTime().domain(xDomain).range([0, innerW]),
@@ -470,7 +501,27 @@ export default function NoiseLevelChart() {
     const clampPlotX = (x) => Math.min(innerW, Math.max(0, x))
     const getAudioEventForPoint = (point) => {
         const key = point ? audioEventTimeKey(point.t) : null
-        return key ? audioEventsByTimeKey[key] ?? null : null
+        const exactEvent = key ? audioEventsByTimeKey[key] ?? null : null
+        if (exactEvent || !point) return exactEvent
+
+        const pointMs = point.t.getTime()
+        if (!Number.isFinite(pointMs)) return null
+
+        let closestEvent = null
+        let closestDistance = Infinity
+
+        audioEvents.forEach((event) => {
+            const eventMs = audioEventTimeMs(event)
+            if (eventMs == null) return
+
+            const distance = Math.abs(eventMs - pointMs)
+            if (distance <= REVIEW_MATCH_TOLERANCE_MS && distance < closestDistance) {
+                closestEvent = event
+                closestDistance = distance
+            }
+        })
+
+        return closestEvent
     }
 
     const getPointHumanLabel = (point) => {
@@ -480,11 +531,7 @@ export default function NoiseLevelChart() {
 
     const getBarFill = (point) => {
         const humanLabel = getPointHumanLabel(point)
-        if (humanLabel === 'chicken') return '#ef4444'
-        if (humanLabel === 'not_chicken' || humanLabel === 'unsure' || humanLabel === 'ignored') {
-            return '#64748b'
-        }
-        return 'url(#noiseBarFill)'
+        return humanLabelColor(humanLabel) ?? 'url(#noiseBarFill)'
     }
 
     const getBarOpacity = (point) => (getPointHumanLabel(point) ? 0.72 : 0.92)
@@ -550,6 +597,13 @@ export default function NoiseLevelChart() {
             }
         }
         return bestDx <= HOVER_SNAP_X_PX ? best : null
+    }
+
+    const getSeriesIndexForPoint = (point) => {
+        if (!point) return -1
+        const pointMs = point.t.getTime()
+        if (!Number.isFinite(pointMs)) return -1
+        return series.findIndex((candidate) => candidate.t.getTime() === pointMs)
     }
 
     const requestClipForBar = (idx) => {
@@ -728,14 +782,14 @@ export default function NoiseLevelChart() {
     }
 
     const saveHumanLabelForPoint = async (point, humanLabel) => {
-        const key = audioEventTimeKey(point?.t)
-        if (!point || !key || labelSavingKey) return
+        const pointKey = audioEventTimeKey(point?.t)
+        if (!point || !pointKey || labelSavingKey) return
 
-        setLabelSavingKey(key)
+        setLabelSavingKey(pointKey)
         setAudioEventError(null)
 
         try {
-            let event = audioEventsByTimeKey[key]
+            let event = getAudioEventForPoint(point)
 
             if (!event?.id) {
                 const createResponse = await fetch(CHICKEN_AUDIO_EVENTS_API, {
@@ -782,10 +836,17 @@ export default function NoiseLevelChart() {
                 throw new Error(updated.message || updated.detail || `HTTP ${updateResponse.status}`)
             }
 
+            const eventKey = audioEventTimeKey(updated.recorded_at) ?? pointKey
             setAudioEventsByTimeKey((current) => ({
                 ...current,
-                [key]: updated,
+                [eventKey]: updated,
             }))
+
+            const currentIdx = getSeriesIndexForPoint(point)
+            const nextIdx = currentIdx + 1
+            if (currentIdx >= 0 && nextIdx < series.length) {
+                requestClipForBar(nextIdx)
+            }
         } catch (e) {
             setAudioEventError(e.message ?? String(e))
         } finally {
@@ -1269,8 +1330,10 @@ export default function NoiseLevelChart() {
                         )}
                         {clipPanel.status === 'ready' && clipPanel.clipUrl && (
                             <video
+                                ref={clipVideoRef}
                                 key={clipPanel.clipUrl}
                                 src={clipPanel.clipUrl}
+                                autoPlay
                                 controls
                                 playsInline
                                 preload="metadata"
@@ -1289,7 +1352,7 @@ export default function NoiseLevelChart() {
                                     ['ignored', 'Ignore'],
                                 ].map(([value, label]) => {
                                     const selected = selectedHumanLabel === value
-                                    const isGreyAction = value === 'not_chicken' || value === 'ignored'
+                                    const isGreyAction = humanLabelColor(value) === HUMAN_LABEL_COLORS.not_chicken
                                     return (
                                         <button
                                             key={value}
@@ -1301,7 +1364,7 @@ export default function NoiseLevelChart() {
                                                 selected
                                                     ? isGreyAction
                                                         ? 'bg-slate-500 text-white'
-                                                        : 'bg-amber-500 text-slate-950'
+                                                        : 'bg-red-500 text-white'
                                                     : 'bg-slate-800 text-slate-200 hover:bg-slate-700'
                                             }`}
                                         >
