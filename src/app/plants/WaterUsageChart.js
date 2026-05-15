@@ -23,6 +23,10 @@ function addLocalDays(d, days) {
     return x
 }
 
+function yesterdayStartLocal() {
+    return dayStartLocal(addLocalDays(new Date(), -1))
+}
+
 function monthStartLocal(d) {
     return new Date(d.getFullYear(), d.getMonth(), 1)
 }
@@ -75,11 +79,11 @@ export default function WaterUsageChart() {
     const [loading, setLoading] = useState(true)
     const [refreshing, setRefreshing] = useState(false)
     const [error, setError] = useState(null)
-    const [selectedDay, setSelectedDay] = useState(() => dayStartLocal(new Date()))
+    const [selectedDay, setSelectedDay] = useState(() => yesterdayStartLocal())
     const [rangeApplied, setRangeApplied] = useState(null)
     const [rangeDraft, setRangeDraft] = useState({start: null, end: null})
     const [rangePickerOpen, setRangePickerOpen] = useState(false)
-    const [calendarMonth, setCalendarMonth] = useState(() => monthStartLocal(new Date()))
+    const [calendarMonth, setCalendarMonth] = useState(() => monthStartLocal(yesterdayStartLocal()))
     const [rangeValidationError, setRangeValidationError] = useState(null)
     const [hoverIdx, setHoverIdx] = useState(null)
 
