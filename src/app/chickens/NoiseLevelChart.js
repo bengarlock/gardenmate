@@ -138,6 +138,7 @@ const NOISE_CACHE_PREFIX = 'gardenmate:noise:v1:'
 const LIVE_CACHE_TTL_MS = REFRESH_MS
 const HISTORICAL_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const LIVE_RANGE_GRACE_MS = REFRESH_MS * 2
+const CHICKEN_EVENTS_FOR_MAX_SCORE = 9
 const noiseCache = new Map()
 
 function getNoiseCacheEntry(key) {
@@ -185,6 +186,57 @@ function buildNoiseCacheKey(start, end, isLiveRange) {
 
 function isLiveNoiseRange(end) {
     return Date.now() - end.getTime() < LIVE_RANGE_GRACE_MS
+}
+
+function extractNoisePoints(noisePayload) {
+    if (!noisePayload) return []
+
+    const bins = noisePayload.bins
+    if (Array.isArray(bins) && bins.length > 0) {
+        const pts = bins
+            .map((b) => {
+                const tStart = new Date(b.bin_start)
+                const tEnd = new Date(b.bin_end)
+                if (Number.isNaN(tStart.getTime()) || Number.isNaN(tEnd.getTime())) return null
+                const t = new Date((tStart.getTime() + tEnd.getTime()) / 2)
+                const rmsRaw = b.rms != null && b.rms !== '' ? Number(b.rms) : NaN
+                if (!Number.isFinite(rmsRaw)) return null
+                const nRaw = b.count
+                const n =
+                    typeof nRaw === 'number' && Number.isFinite(nRaw)
+                        ? nRaw
+                        : Number(nRaw) || 1
+                return {
+                    t,
+                    y: rmsRaw,
+                    rms: rmsRaw,
+                    level: b.level ?? null,
+                    n,
+                }
+            })
+            .filter(Boolean)
+        pts.sort((a, b) => a.t - b.t)
+        return pts
+    }
+
+    const rows = noisePayload.results ?? []
+    const pts = rows
+        .map((row) => {
+            const t = new Date(row.timestamp)
+            if (Number.isNaN(t.getTime())) return null
+            const rmsRaw = row.rms != null && row.rms !== '' ? Number(row.rms) : NaN
+            if (!Number.isFinite(rmsRaw)) return null
+            return {
+                t,
+                y: rmsRaw,
+                rms: rmsRaw,
+                level: row.level ?? null,
+                n: 1,
+            }
+        })
+        .filter(Boolean)
+    pts.sort((a, b) => a.t - b.t)
+    return pts
 }
 
 export default function NoiseLevelChart() {
@@ -313,54 +365,7 @@ export default function NoiseLevelChart() {
     }, [timeframe, selectedDay, rangeApplied, zoomApplied])
 
     const rawSeries = useMemo(() => {
-        if (!payload) return []
-
-        const bins = payload.bins
-        if (Array.isArray(bins) && bins.length > 0) {
-            const pts = bins
-                .map((b) => {
-                    const tStart = new Date(b.bin_start)
-                    const tEnd = new Date(b.bin_end)
-                    if (Number.isNaN(tStart.getTime()) || Number.isNaN(tEnd.getTime())) return null
-                    const t = new Date((tStart.getTime() + tEnd.getTime()) / 2)
-                    const rmsRaw = b.rms != null && b.rms !== '' ? Number(b.rms) : NaN
-                    if (!Number.isFinite(rmsRaw)) return null
-                    const nRaw = b.count
-                    const n =
-                        typeof nRaw === 'number' && Number.isFinite(nRaw)
-                            ? nRaw
-                            : Number(nRaw) || 1
-                    return {
-                        t,
-                        y: rmsRaw,
-                        rms: rmsRaw,
-                        level: b.level ?? null,
-                        n,
-                    }
-                })
-                .filter(Boolean)
-            pts.sort((a, b) => a.t - b.t)
-            return pts
-        }
-
-        const rows = payload.results ?? []
-        const pts = rows
-            .map((row) => {
-                const t = new Date(row.timestamp)
-                if (Number.isNaN(t.getTime())) return null
-                const rmsRaw = row.rms != null && row.rms !== '' ? Number(row.rms) : NaN
-                if (!Number.isFinite(rmsRaw)) return null
-                return {
-                    t,
-                    y: rmsRaw,
-                    rms: rmsRaw,
-                    level: row.level ?? null,
-                    n: 1,
-                }
-            })
-            .filter(Boolean)
-        pts.sort((a, b) => a.t - b.t)
-        return pts
+        return extractNoisePoints(payload)
     }, [payload])
 
     /** One bar per row; `y` is RMS (dB). */
@@ -535,6 +540,25 @@ export default function NoiseLevelChart() {
     }
 
     const getBarOpacity = (point) => (getPointHumanLabel(point) ? 0.72 : 0.92)
+
+    const noiseScore = useMemo(() => {
+        let chickenCount = 0
+        let reviewedCount = 0
+
+        series.forEach((point) => {
+            const humanLabel = getPointHumanLabel(point)
+            if (!humanLabel) return
+            reviewedCount += 1
+            if (humanLabel === 'chicken') chickenCount += 1
+        })
+
+        return {
+            value: Math.min(10, 1 + Math.min(CHICKEN_EVENTS_FOR_MAX_SCORE, chickenCount)),
+            chickenCount,
+            reviewedCount,
+            visibleCount: series.length,
+        }
+    }, [series, audioEventsByTimeKey, audioEvents])
 
     const zoomSelection =
         zoomDrag && Math.abs(zoomDrag.currentX - zoomDrag.startX) >= MIN_ZOOM_DRAG_PX
@@ -1249,12 +1273,36 @@ export default function NoiseLevelChart() {
         : null
 
     const hoverPoint = hoverIdx != null && series[hoverIdx] ? series[hoverIdx] : null
+    const scoreTone =
+        noiseScore?.value >= 8
+            ? 'text-red-300'
+            : noiseScore?.value >= 5
+              ? 'text-amber-300'
+              : 'text-emerald-300'
+    const scoreMeterWidth = `${((noiseScore?.value ?? 1) / 10) * 100}%`
 
     return (
         <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
             <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
                 Noise Level
             </h2>
+            <div className="mb-3 grid gap-3 rounded-lg border border-slate-700/80 bg-slate-900/70 p-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Chicken noise score
+                    </p>
+                    <div className={`text-4xl font-semibold leading-none ${scoreTone}`}>
+                        {noiseScore ? noiseScore.value : '—'}
+                        <span className="ml-1 text-sm font-medium text-slate-400">/10</span>
+                    </div>
+                </div>
+                <div className="h-2 min-w-0 overflow-hidden rounded-full bg-slate-700">
+                    <div
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-500"
+                        style={{ width: scoreMeterWidth }}
+                    />
+                </div>
+            </div>
             {dayNavigationControls}
             {timeframeControls}
             {rangePicker}
@@ -1523,6 +1571,29 @@ export default function NoiseLevelChart() {
                     </text>
                 </g>
             </svg>
+                <div className="mx-auto mt-2 grid max-w-md grid-cols-3 gap-2 border-t border-slate-700/70 pt-3 text-center text-xs text-slate-300">
+                    <div>
+                        <span className="block text-[10px] uppercase tracking-wide text-slate-500">
+                            Chicken
+                        </span>
+                        {noiseScore.chickenCount}
+                    </div>
+                    <div>
+                        <span className="block text-[10px] uppercase tracking-wide text-slate-500">
+                            Reviewed
+                        </span>
+                        {noiseScore.reviewedCount}
+                    </div>
+                    <div>
+                        <span className="block text-[10px] uppercase tracking-wide text-slate-500">
+                            Visible
+                        </span>
+                        {noiseScore.visibleCount}
+                    </div>
+                    <p className="col-span-3 text-[11px] text-slate-500">
+                        Score is based on confirmed chicken labels in the bars currently shown.
+                    </p>
+                </div>
             </div>
         </div>
     )
