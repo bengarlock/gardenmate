@@ -25,6 +25,12 @@ const NavBar = () => {
                 </div>
             </Link>
 
+            <Link href={"/weather"}>
+                <div className={pathname === '/weather' ? "navbar-icon selected" : "navbar-icon"}>
+                    Weather
+                </div>
+            </Link>
+
             <Link href={"/chickens"}>
                 <div className={pathname === '/chickens' ? "navbar-icon selected" : "navbar-icon"}>
                     Chickens

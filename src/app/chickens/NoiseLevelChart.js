@@ -1279,7 +1279,9 @@ export default function NoiseLevelChart() {
             : noiseScore?.value >= 5
               ? 'text-amber-300'
               : 'text-emerald-300'
-    const scoreMeterWidth = `${((noiseScore?.value ?? 1) / 10) * 100}%`
+    const scoreMeterValue = Math.max(1, Math.min(10, noiseScore?.value ?? 1))
+    const scoreMeterWidth = `${scoreMeterValue * 10}%`
+    const scoreMeterBackgroundSize = `${1000 / scoreMeterValue}% 100%`
 
     return (
         <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
@@ -1298,8 +1300,14 @@ export default function NoiseLevelChart() {
                 </div>
                 <div className="h-2 min-w-0 overflow-hidden rounded-full bg-slate-700">
                     <div
-                        className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-red-500"
-                        style={{ width: scoreMeterWidth }}
+                        className="h-full rounded-full"
+                        style={{
+                            width: scoreMeterWidth,
+                            backgroundImage:
+                                'linear-gradient(to right, #34d399 0%, #fbbf24 60%, #fb923c 90%, #ef4444 100%)',
+                            backgroundPosition: 'left center',
+                            backgroundSize: scoreMeterBackgroundSize,
+                        }}
                     />
                 </div>
             </div>
