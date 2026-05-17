@@ -1057,8 +1057,11 @@ function HistoricalWeatherChart() {
                         )}
                     </div>
                     {!hasVisibleSeries && (
-                        <div className="rounded-lg border border-sky-100/15 bg-sky-950/45 p-5 text-sky-100/75">
-                            Select at least one weather metric to display.
+                        <div
+                            className="flex w-full items-center justify-center rounded-lg border border-sky-100/15 bg-sky-950/45 p-5 text-sky-100/75"
+                            style={{ aspectRatio: `${width} / ${height}` }}
+                        >
+                            <span>Select at least one weather metric to display.</span>
                         </div>
                     )}
                     {hasVisibleSeries && (

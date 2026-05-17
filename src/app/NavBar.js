@@ -7,6 +7,7 @@ const NavBar = () => {
 
     const pathname = usePathname()
     const plantsSelected = pathname === '/plants' || pathname.startsWith('/plants/')
+    const chickensSelected = pathname === '/chickens' || pathname.startsWith('/chickens/')
 
     return (
         <nav className="fixed left-0 top-0 z-50 w-full bg-gray-900/85 text-white md:h-screen md:w-64 lg:w-80">
@@ -32,7 +33,7 @@ const NavBar = () => {
             </Link>
 
             <Link href={"/chickens"}>
-                <div className={pathname === '/chickens' ? "navbar-icon selected" : "navbar-icon"}>
+                <div className={chickensSelected ? "navbar-icon selected" : "navbar-icon"}>
                     Chickens
                 </div>
             </Link>
