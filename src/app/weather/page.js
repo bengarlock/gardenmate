@@ -1,7 +1,7 @@
 'use client'
 
 import * as d3 from 'd3'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 const FORECAST_API = 'https://bengarlock.com/api/v1/garden/weather/forecast/'
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
@@ -47,6 +47,24 @@ function formatDay(value) {
         month: 'short',
         day: 'numeric',
     }).format(new Date(value))
+}
+
+function formatHour(value) {
+    if (!value) return '--'
+    return new Intl.DateTimeFormat(undefined, {
+        hour: 'numeric',
+    }).format(new Date(value))
+}
+
+function dayStartLocal(value) {
+    const date = new Date(value)
+    date.setHours(0, 0, 0, 0)
+    return date
+}
+
+function localDayKey(value) {
+    const day = dayStartLocal(value)
+    return Number.isNaN(day.getTime()) ? null : day.toISOString()
 }
 
 function windDirectionLabel(degrees) {
@@ -113,6 +131,223 @@ function WeatherIcon({ icon, className = 'h-10 w-10' }) {
                 strokeLinecap="round"
             />
         </svg>
+    )
+}
+
+function WindArrow({ degrees }) {
+    const rotation = Number.isFinite(Number(degrees)) ? Number(degrees) : 0
+
+    return (
+        <svg
+            className="h-4 w-4 shrink-0 text-sky-100"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+            style={{ transform: `rotate(${rotation}deg)` }}
+        >
+            <path d="M12 2 4 22l8-4 8 4L12 2Z" />
+        </svg>
+    )
+}
+
+function HourlyDayForecast({ day, hourly }) {
+    const scrollRef = useRef(null)
+    const dragRef = useRef({
+        pointerId: null,
+        startX: 0,
+        startScrollLeft: 0,
+        lastTime: 0,
+        lastScrollLeft: 0,
+        velocity: 0,
+    })
+    const glideFrameRef = useRef(null)
+    const hours = hourly
+        .map((row) => ({
+            ...row,
+            forecastDate: new Date(row.forecasted_at),
+            temp: celsiusToFahrenheit(row.air_temperature),
+            precipProbability: Number(row.precip_probability),
+            windAvg: Number(row.wind_avg),
+            windDirection: Number(row.wind_direction),
+        }))
+        .filter((row) => !Number.isNaN(row.forecastDate.getTime()))
+        .sort((a, b) => a.forecastDate - b.forecastDate)
+
+    function centerCurrentHour(behavior = 'auto') {
+        const scroller = scrollRef.current
+        if (!scroller || hours.length === 0) return
+
+        const now = new Date()
+        const selectedDay = dayStartLocal(day?.forecasted_at)
+        const targetTime = new Date(selectedDay)
+        targetTime.setHours(now.getHours(), now.getMinutes(), 0, 0)
+
+        const targetIndex = hours.reduce((closestIndex, hour, index) => {
+            const closestDistance = Math.abs(hours[closestIndex].forecastDate - targetTime)
+            const distance = Math.abs(hour.forecastDate - targetTime)
+            return distance < closestDistance ? index : closestIndex
+        }, 0)
+        const targetCard = scroller.querySelector(`[data-hour-index="${targetIndex}"]`)
+        if (!targetCard) return
+
+        const targetLeft = targetCard.offsetLeft - scroller.offsetLeft - (scroller.clientWidth / 2) + (targetCard.offsetWidth / 2)
+        const scrollLeft = Math.max(0, targetLeft)
+        if (typeof scroller.scrollTo === 'function') {
+            scroller.scrollTo({ left: scrollLeft, behavior })
+        } else {
+            scroller.scrollLeft = scrollLeft
+        }
+    }
+
+    useEffect(() => {
+        centerCurrentHour()
+    }, [day?.forecasted_at, hours])
+
+    useEffect(() => {
+        return () => {
+            if (glideFrameRef.current) cancelAnimationFrame(glideFrameRef.current)
+        }
+    }, [])
+
+    function stopGlide() {
+        if (!glideFrameRef.current) return
+        cancelAnimationFrame(glideFrameRef.current)
+        glideFrameRef.current = null
+    }
+
+    function startGlide(initialVelocity) {
+        const scroller = scrollRef.current
+        if (!scroller || Math.abs(initialVelocity) < 0.02) return
+
+        let velocity = initialVelocity
+        let lastFrameTime = performance.now()
+
+        function glide(frameTime) {
+            const elapsed = frameTime - lastFrameTime
+            lastFrameTime = frameTime
+
+            scroller.scrollLeft += velocity * elapsed
+            velocity *= Math.pow(0.94, elapsed / 16)
+
+            const atStart = scroller.scrollLeft <= 0
+            const atEnd = scroller.scrollLeft >= scroller.scrollWidth - scroller.clientWidth - 1
+            if (Math.abs(velocity) < 0.02 || (velocity < 0 && atStart) || (velocity > 0 && atEnd)) {
+                glideFrameRef.current = null
+                return
+            }
+
+            glideFrameRef.current = requestAnimationFrame(glide)
+        }
+
+        glideFrameRef.current = requestAnimationFrame(glide)
+    }
+
+    function handlePointerDown(event) {
+        if (!scrollRef.current) return
+        stopGlide()
+        dragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startScrollLeft: scrollRef.current.scrollLeft,
+            lastTime: performance.now(),
+            lastScrollLeft: scrollRef.current.scrollLeft,
+            velocity: 0,
+        }
+        scrollRef.current.setPointerCapture(event.pointerId)
+    }
+
+    function handlePointerMove(event) {
+        const scroller = scrollRef.current
+        if (!scroller || dragRef.current.pointerId !== event.pointerId) return
+        const nextScrollLeft = dragRef.current.startScrollLeft - (event.clientX - dragRef.current.startX)
+        const now = performance.now()
+        const elapsed = Math.max(1, now - dragRef.current.lastTime)
+
+        dragRef.current.velocity = (nextScrollLeft - dragRef.current.lastScrollLeft) / elapsed
+        dragRef.current.lastTime = now
+        dragRef.current.lastScrollLeft = nextScrollLeft
+        scroller.scrollLeft = nextScrollLeft
+    }
+
+    function handlePointerEnd(event) {
+        if (scrollRef.current?.hasPointerCapture(event.pointerId)) {
+            scrollRef.current.releasePointerCapture(event.pointerId)
+        }
+        startGlide(dragRef.current.velocity)
+        dragRef.current.pointerId = null
+    }
+
+    function handleCurrentClick() {
+        stopGlide()
+        centerCurrentHour('smooth')
+    }
+
+    if (!day || hours.length === 0) {
+        return (
+            <div className="mt-4 rounded-lg border border-sky-100/15 bg-sky-950/45 p-4 text-sky-100/75">
+                Hourly forecast data is not available for this day yet.
+            </div>
+        )
+    }
+
+    return (
+        <div className="mt-4 overflow-hidden rounded-lg border border-sky-100/15 bg-gradient-to-br from-sky-950/70 via-blue-950/70 to-cyan-950/60">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-sky-100/10 p-4">
+                <div>
+                    <p className="text-sm font-semibold uppercase tracking-wide text-sky-200/70">
+                        {formatDay(day.forecasted_at)}
+                    </p>
+                    <h3 className="mt-1 text-2xl font-semibold text-white">{day.conditions ?? 'Forecast'}</h3>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-3 text-sm text-sky-100">
+                    <WeatherIcon icon={day.icon} className="h-14 w-14 shrink-0" />
+                    <span>Rain {formatNumber(day.precip_probability)}%</span>
+                    <span>Low {formatTemperature(day.air_temperature_low)}</span>
+                    <span>High {formatTemperature(day.air_temperature_high)}</span>
+                    <button
+                        type="button"
+                        onClick={handleCurrentClick}
+                        className="rounded-md border border-sky-100/20 bg-sky-100/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-sky-100/40 hover:bg-sky-100/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
+                    >
+                        Current
+                    </button>
+                </div>
+            </div>
+            <div
+                ref={scrollRef}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerEnd}
+                onPointerCancel={handlePointerEnd}
+                className="cursor-grab select-none overflow-x-auto active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
+                style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            >
+                <div className="grid min-w-[64rem] grid-flow-col auto-cols-[7.5rem]">
+                    {hours.map((hour, index) => (
+                        <div
+                            key={hour.id}
+                            data-hour-index={index}
+                            className="border-r border-sky-100/10 p-4 text-center last:border-r-0"
+                        >
+                            <p className="text-lg font-semibold text-white">{formatHour(hour.forecasted_at)}</p>
+                            <div className="mt-4 flex justify-center">
+                                <WeatherIcon icon={hour.icon} className="h-12 w-12" />
+                            </div>
+                            <p className="mt-4 text-2xl font-semibold text-white">
+                                {hour.temp == null ? '--' : `${Math.round(hour.temp)}°`}
+                            </p>
+                            <p className="mt-3 text-sm text-sky-100">
+                                Rain {Number.isFinite(hour.precipProbability) ? formatNumber(hour.precipProbability) : '--'}%
+                            </p>
+                            <div className="mt-3 flex items-center justify-center gap-2 text-sm text-sky-100/80">
+                                <WindArrow degrees={hour.windDirection} />
+                                <span>{Number.isFinite(hour.windAvg) ? formatNumber(hour.windAvg) : '--'} mph</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
     )
 }
 
@@ -338,6 +573,7 @@ export default function WeatherPage() {
     const [forecastLoading, setForecastLoading] = useState(true)
     const [error, setError] = useState(null)
     const [forecastError, setForecastError] = useState(null)
+    const [selectedDailyKey, setSelectedDailyKey] = useState(null)
 
     useEffect(() => {
         let cancelled = false
@@ -398,8 +634,28 @@ export default function WeatherPage() {
         [forecast]
     )
     const dailyForecast = useMemo(
-        () => forecast.filter((row) => row.forecast_type === 'daily'),
+        () => {
+            const todayStart = dayStartLocal(new Date()).getTime()
+            return forecast
+                .filter((row) => {
+                    if (row.forecast_type !== 'daily') return false
+                    const forecastDayStart = dayStartLocal(row.forecasted_at).getTime()
+                    return Number.isFinite(forecastDayStart) && forecastDayStart >= todayStart
+                })
+                .sort((a, b) => new Date(a.forecasted_at) - new Date(b.forecasted_at))
+        },
         [forecast]
+    )
+    const selectedDailyForecast = useMemo(
+        () => dailyForecast.find((day) => localDayKey(day.forecasted_at) === selectedDailyKey) ?? null,
+        [dailyForecast, selectedDailyKey]
+    )
+    const selectedHourlyForecast = useMemo(
+        () => {
+            if (!selectedDailyKey) return []
+            return hourlyForecast.filter((hour) => localDayKey(hour.forecasted_at) === selectedDailyKey)
+        },
+        [hourlyForecast, selectedDailyKey]
     )
     const metrics = useMemo(() => {
         if (!observation) return []
@@ -438,6 +694,16 @@ export default function WeatherPage() {
         ]
     }, [observation])
 
+    useEffect(() => {
+        if (dailyForecast.length === 0) {
+            if (selectedDailyKey !== null) setSelectedDailyKey(null)
+            return
+        }
+
+        const hasSelectedDay = dailyForecast.some((day) => localDayKey(day.forecasted_at) === selectedDailyKey)
+        if (!hasSelectedDay) setSelectedDailyKey(localDayKey(dailyForecast[0].forecasted_at))
+    }, [dailyForecast, selectedDailyKey])
+
     return (
         <main className="min-h-screen w-full bg-gradient-to-br from-sky-950/90 via-blue-950/85 to-cyan-950/80 text-stone-50">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
@@ -457,62 +723,6 @@ export default function WeatherPage() {
                         )}
                     </div>
                 </header>
-
-                {forecastLoading && (
-                    <section className="rounded-lg border border-sky-200/15 bg-gradient-to-br from-sky-950/85 via-blue-950/80 to-cyan-950/70 p-5 text-sky-100/75 shadow-xl">
-                        Loading forecast...
-                    </section>
-                )}
-
-                {forecastError && (
-                    <section className="rounded-lg border border-red-400/30 bg-gradient-to-br from-red-950/70 via-blue-950/60 to-sky-950/70 p-5 text-red-100 shadow-xl">
-                        Could not load forecast: {forecastError}
-                    </section>
-                )}
-
-                {!forecastLoading && !forecastError && dailyForecast.length > 0 && (
-                    <section className="rounded-lg border border-sky-200/15 bg-gradient-to-br from-sky-900/85 via-blue-950/85 to-cyan-950/75 p-5 shadow-xl">
-                        <div className="mb-4 flex items-end justify-between gap-3">
-                            <div>
-                                <p className="text-sm font-semibold uppercase tracking-wide text-sky-300">
-                                    Daily
-                                </p>
-                                <h2 className="mt-1 text-2xl font-semibold text-white">10-day outlook</h2>
-                            </div>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                            {dailyForecast.map((day) => (
-                                <div
-                                    key={day.id}
-                                    className="rounded-lg border border-sky-100/15 bg-gradient-to-br from-sky-800/70 via-blue-900/70 to-cyan-900/50 p-4 shadow-lg"
-                                >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div>
-                                            <p className="text-xs font-semibold uppercase tracking-wide text-sky-100/65">
-                                                {formatDay(day.forecasted_at)}
-                                            </p>
-                                            <p className="mt-2 text-lg font-semibold leading-tight text-white">
-                                                {day.conditions ?? 'Forecast'}
-                                            </p>
-                                        </div>
-                                        <WeatherIcon icon={day.icon} className="h-10 w-10 shrink-0" />
-                                    </div>
-                                    <div className="mt-4 flex items-baseline gap-2">
-                                        <span className="text-2xl font-semibold text-white">
-                                            {formatTemperature(day.air_temperature_high)}
-                                        </span>
-                                        <span className="text-sm text-sky-100/60">
-                                            / {formatTemperature(day.air_temperature_low)}
-                                        </span>
-                                    </div>
-                                    <p className="mt-2 text-xs text-sky-100">
-                                        Rain {formatNumber(day.precip_probability)}%
-                                    </p>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                )}
 
                 {loading && (
                     <section className="rounded-lg border border-sky-200/15 bg-gradient-to-br from-sky-950/85 via-blue-950/80 to-cyan-950/70 p-5 text-sky-100/75 shadow-xl">
@@ -554,6 +764,74 @@ export default function WeatherPage() {
                             ))}
                         </section>
                     </>
+                )}
+
+                {forecastLoading && (
+                    <section className="rounded-lg border border-sky-200/15 bg-gradient-to-br from-sky-950/85 via-blue-950/80 to-cyan-950/70 p-5 text-sky-100/75 shadow-xl">
+                        Loading forecast...
+                    </section>
+                )}
+
+                {forecastError && (
+                    <section className="rounded-lg border border-red-400/30 bg-gradient-to-br from-red-950/70 via-blue-950/60 to-sky-950/70 p-5 text-red-100 shadow-xl">
+                        Could not load forecast: {forecastError}
+                    </section>
+                )}
+
+                {!forecastLoading && !forecastError && dailyForecast.length > 0 && (
+                    <section className="rounded-lg border border-sky-200/15 bg-gradient-to-br from-sky-900/85 via-blue-950/85 to-cyan-950/75 p-5 shadow-xl">
+                        <div className="mb-4 flex items-end justify-between gap-3">
+                            <div>
+                                <p className="text-sm font-semibold uppercase tracking-wide text-sky-300">
+                                    Daily
+                                </p>
+                                <h2 className="mt-1 text-2xl font-semibold text-white">10-day outlook</h2>
+                            </div>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                            {dailyForecast.map((day) => {
+                                const dayKey = localDayKey(day.forecasted_at)
+                                const isSelected = dayKey === selectedDailyKey
+
+                                return (
+                                    <button
+                                        key={day.id}
+                                        type="button"
+                                        onClick={() => setSelectedDailyKey(dayKey)}
+                                        className={`flex h-full flex-col rounded-lg border bg-gradient-to-br p-4 text-left shadow-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
+                                            isSelected
+                                                ? 'border-sky-200/70 from-sky-700/85 via-blue-800/80 to-cyan-800/65 shadow-sky-500/20'
+                                                : 'border-sky-100/15 from-sky-800/70 via-blue-900/70 to-cyan-900/50 hover:border-sky-200/45'
+                                        }`}
+                                    >
+                                        <div className="flex min-h-[6.75rem] items-start justify-between gap-3">
+                                            <div>
+                                                <p className="text-xs font-semibold uppercase tracking-wide text-sky-100/65">
+                                                    {formatDay(day.forecasted_at)}
+                                                </p>
+                                                <p className="mt-2 min-h-[2.75rem] text-lg font-semibold leading-tight text-white">
+                                                    {day.conditions ?? 'Forecast'}
+                                                </p>
+                                            </div>
+                                            <WeatherIcon icon={day.icon} className="h-10 w-10 shrink-0" />
+                                        </div>
+                                        <div className="mt-auto flex items-baseline gap-2">
+                                            <span className="text-2xl font-semibold text-white">
+                                                {formatTemperature(day.air_temperature_high)}
+                                            </span>
+                                            <span className="text-sm text-sky-100/60">
+                                                / {formatTemperature(day.air_temperature_low)}
+                                            </span>
+                                        </div>
+                                        <p className="mt-2 text-xs text-sky-100">
+                                            Rain {formatNumber(day.precip_probability)}%
+                                        </p>
+                                    </button>
+                                )
+                            })}
+                        </div>
+                        <HourlyDayForecast day={selectedDailyForecast} hourly={selectedHourlyForecast} />
+                    </section>
                 )}
 
                 {!forecastLoading && !forecastError && (
