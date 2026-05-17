@@ -3,8 +3,9 @@
 import * as d3 from 'd3'
 import { useEffect, useMemo, useState } from 'react'
 
-const WEATHER_API = 'https://bengarlock.com/api/v1/garden/weather/'
 const FORECAST_API = 'https://bengarlock.com/api/v1/garden/weather/forecast/'
+const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
+const WEATHER_PROXY_API = `${APP_BASE_PATH}/api/weather`
 
 function celsiusToFahrenheit(value) {
     return value == null || Number.isNaN(Number(value)) ? null : (Number(value) * 9) / 5 + 32
@@ -341,10 +342,9 @@ export default function WeatherPage() {
     useEffect(() => {
         let cancelled = false
 
-        fetch(WEATHER_API, {
+        fetch(WEATHER_PROXY_API, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ request: 'get_weather_data' }),
         })
             .then((response) => {
                 if (!response.ok) throw new Error(`HTTP ${response.status}`)

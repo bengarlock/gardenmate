@@ -3,6 +3,9 @@
 
 import {useEffect, useState} from "react";
 
+const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
+const WEATHER_PROXY_API = `${APP_BASE_PATH}/api/weather`
+
 const Weather = () => {
 
     const [currentWeather, setCurrentWeather] = useState(null)
@@ -12,25 +15,15 @@ const Weather = () => {
     }, []);
 
     const fetchWeather = () => {
-        const myHeaders = new Headers();
-        const csrfToken = document.cookie.split('; ').find(row => row.startsWith('csrftoken='));
-        if (csrfToken) {
-            myHeaders.append("X-CSRFToken", csrfToken.split('=')[1]);
-        }
-        myHeaders.append("Content-Type", "application/json");
-
-        const raw = JSON.stringify({
-            "request": "get_weather_data"
-        });
-
         const requestOptions = {
             method: "POST",
-            headers: myHeaders,
-            body: raw,
+            headers: {
+                "Content-Type": "application/json",
+            },
             redirect: "follow"
         };
 
-        fetch("https://bengarlock.com/api/v1/garden/weather/", requestOptions)
+        fetch(WEATHER_PROXY_API, requestOptions)
             .then((response) => response.json())
             .then((result) => setCurrentWeather(result))
             .catch((error) => console.error(error));
