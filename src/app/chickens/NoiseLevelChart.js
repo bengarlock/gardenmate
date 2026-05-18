@@ -239,7 +239,8 @@ function extractNoisePoints(noisePayload) {
     return pts
 }
 
-export default function NoiseLevelChart() {
+export default function NoiseLevelChart({ variant = 'full' }) {
+    const isTileVariant = variant === 'tile'
     const [payload, setPayload] = useState(null)
     const [loading, setLoading] = useState(true)
     const [isRefreshing, setIsRefreshing] = useState(false)
@@ -380,9 +381,11 @@ export default function NoiseLevelChart() {
         }))
     }, [rawSeries])
 
-    const margin = { top: 28, right: 28, bottom: 52, left: 108 }
+    const margin = isTileVariant
+        ? { top: 12, right: 12, bottom: 30, left: 12 }
+        : { top: 28, right: 28, bottom: 52, left: 108 }
     const width = 720
-    const height = 340
+    const height = isTileVariant ? 220 : 340
     const innerW = width - margin.left - margin.right
     const innerH = height - margin.top - margin.bottom
 
@@ -703,6 +706,7 @@ export default function NoiseLevelChart() {
     }
 
     const handlePlotClick = (e) => {
+        if (isTileVariant) return
         if (suppressNextClickRef.current) {
             suppressNextClickRef.current = false
             return
@@ -714,6 +718,7 @@ export default function NoiseLevelChart() {
     }
 
     const handlePlotPointerDown = (e) => {
+        if (isTileVariant) return
         if (e.button !== 0 || series.length === 0) return
         const [innerX, innerY] = d3.pointer(e, e.currentTarget)
         if (innerX < 0 || innerX > innerW || innerY < 0 || innerY > innerH) return
@@ -726,6 +731,7 @@ export default function NoiseLevelChart() {
     }
 
     const handlePlotPointerMove = (e) => {
+        if (isTileVariant) return
         if (!zoomDrag) return
         const [innerX] = d3.pointer(e, e.currentTarget)
         setZoomDrag((current) =>
@@ -739,6 +745,7 @@ export default function NoiseLevelChart() {
     }
 
     const handlePlotPointerUp = (e) => {
+        if (isTileVariant) return
         if (!zoomDrag) return
         e.currentTarget.releasePointerCapture?.(e.pointerId)
 
@@ -786,6 +793,7 @@ export default function NoiseLevelChart() {
     }
 
     const handlePlotPointerCancel = (e) => {
+        if (isTileVariant) return
         e.currentTarget.releasePointerCapture?.(e.pointerId)
         setZoomDrag(null)
     }
@@ -1043,7 +1051,7 @@ export default function NoiseLevelChart() {
         [calendarMonth]
     )
 
-    const timeframeControls = (
+    const timeframeControls = isTileVariant ? null : (
         <div
             className="mb-4 flex flex-wrap justify-center gap-2"
             role="group"
@@ -1065,7 +1073,7 @@ export default function NoiseLevelChart() {
     )
 
     const dayNavigationControls = (
-        <div className="mx-auto mb-3 grid w-full max-w-[28.5rem] grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center justify-center gap-2 pt-4">
+        <div className={`${isTileVariant ? 'mb-3' : 'mx-auto mb-3 pt-4'} grid w-full max-w-[28.5rem] grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center justify-center gap-2`}>
             {canGoBack ? (
                 <button
                     type="button"
@@ -1091,10 +1099,12 @@ export default function NoiseLevelChart() {
             )}
             <button
                 type="button"
-                onClick={openRangePicker}
-                className="h-9 w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-lg px-3 text-center text-sm font-semibold leading-9 text-slate-100 transition-colors hover:bg-slate-700/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80"
+                onClick={isTileVariant ? undefined : openRangePicker}
+                className={`h-9 w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-lg px-3 text-center text-sm font-semibold leading-9 text-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 ${
+                    isTileVariant ? 'cursor-default bg-slate-900/50' : 'transition-colors hover:bg-slate-700/80'
+                }`}
                 aria-expanded={rangePickerOpen}
-                aria-label="Choose date range"
+                aria-label={isTileVariant ? 'Selected noise day' : 'Choose date range'}
                 title={activeDateLabel}
             >
                 {activeDateLabel}
@@ -1116,7 +1126,7 @@ export default function NoiseLevelChart() {
         </div>
     )
 
-    const rangePicker = rangePickerOpen ? (
+    const rangePicker = !isTileVariant && rangePickerOpen ? (
         <div className="absolute left-1/2 top-28 z-30 w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-slate-700/80 bg-slate-900/95 p-3 shadow-2xl ring-1 ring-black/30">
             <div className="mb-3 grid grid-cols-[2rem_1fr_2rem] items-center gap-3">
                 <button
@@ -1216,44 +1226,51 @@ export default function NoiseLevelChart() {
         </div>
     ) : null
 
+    const containerClass = isTileVariant
+        ? 'relative w-full rounded-lg border border-emerald-200/15 bg-gradient-to-br from-stone-900/90 via-slate-950/90 to-emerald-950/55 p-5 shadow-xl'
+        : 'relative w-full max-w-none rounded-2xl bg-slate-800/90 p-6 shadow-xl'
+    const headingClass = isTileVariant
+        ? 'text-sm font-semibold uppercase tracking-wide text-emerald-300/80'
+        : 'mb-1 text-lg font-semibold tracking-wide text-slate-100'
+
     if (loading && !payload) {
         return (
-            <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
-                <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
-                    Noise Level
+            <div className={containerClass}>
+                <h2 className={headingClass}>
+                    {isTileVariant ? 'Noise Review' : 'Noise Level'}
                 </h2>
-                {dayNavigationControls}
+                {!isTileVariant && dayNavigationControls}
                 {timeframeControls}
                 {rangePicker}
-                <p className="text-slate-300">Loading noise levels…</p>
+                <p className="text-sm text-slate-300">Loading noise levels…</p>
             </div>
         )
     }
 
     if (error && !payload) {
         return (
-            <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
-                <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
-                    Noise Level
+            <div className={containerClass}>
+                <h2 className={headingClass}>
+                    {isTileVariant ? 'Noise Review' : 'Noise Level'}
                 </h2>
-                {dayNavigationControls}
+                {!isTileVariant && dayNavigationControls}
                 {timeframeControls}
                 {rangePicker}
-                <p className="text-red-300">Could not load noise data: {error}</p>
+                <p className="text-sm text-red-300">Could not load noise data: {error}</p>
             </div>
         )
     }
 
     if (rawSeries.length === 0) {
         return (
-            <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
-                <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
-                    Noise Level
+            <div className={containerClass}>
+                <h2 className={headingClass}>
+                    {isTileVariant ? 'Noise Review' : 'Noise Level'}
                 </h2>
-                {dayNavigationControls}
+                {!isTileVariant && dayNavigationControls}
                 {timeframeControls}
                 {rangePicker}
-                <p className="text-slate-400">No RMS readings in this response.</p>
+                <p className="text-sm text-slate-400">No RMS readings in this response.</p>
             </div>
         )
     }
@@ -1282,18 +1299,30 @@ export default function NoiseLevelChart() {
     const scoreMeterValue = Math.max(1, Math.min(10, noiseScore?.value ?? 1))
     const scoreMeterWidth = `${scoreMeterValue * 10}%`
     const scoreMeterBackgroundSize = `${1000 / scoreMeterValue}% 100%`
+    const scoreCardClass = `${
+        isTileVariant ? 'mt-3' : 'mb-3'
+    } grid gap-3 rounded-lg border border-slate-700/80 bg-slate-900/70 p-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center`
+    const scoreValueClass = `${
+        isTileVariant ? 'text-5xl' : 'text-4xl'
+    } font-semibold leading-none ${scoreTone}`
+    const tooltipClass = `absolute right-6 ${
+        isTileVariant ? 'top-36' : 'top-32'
+    } z-10 w-44 rounded-lg border border-slate-700/80 bg-slate-950/85 px-3 py-2 text-right shadow-lg ring-1 ring-black/20`
+    const svgClass = `block h-auto w-full ${
+        isTileVariant ? 'overflow-hidden rounded-md bg-slate-950/25' : 'overflow-visible'
+    }`
 
     return (
-        <div className="relative w-full max-w-4xl rounded-2xl bg-slate-800/90 p-6 shadow-xl">
-            <h2 className="mb-1 text-lg font-semibold tracking-wide text-slate-100">
-                Noise Level
+        <div className={containerClass}>
+            <h2 className={headingClass}>
+                {isTileVariant ? 'Noise Review' : 'Noise Level'}
             </h2>
-            <div className="mb-3 grid gap-3 rounded-lg border border-slate-700/80 bg-slate-900/70 p-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+            <div className={scoreCardClass}>
                 <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                         Chicken noise score
                     </p>
-                    <div className={`text-4xl font-semibold leading-none ${scoreTone}`}>
+                    <div className={scoreValueClass}>
                         {noiseScore ? noiseScore.value : '—'}
                         <span className="ml-1 text-sm font-medium text-slate-400">/10</span>
                     </div>
@@ -1311,11 +1340,11 @@ export default function NoiseLevelChart() {
                     />
                 </div>
             </div>
-            {dayNavigationControls}
+            {!isTileVariant && dayNavigationControls}
             {timeframeControls}
             {rangePicker}
             {hoverPoint && (
-                <div className="absolute right-6 top-32 z-10 w-44 rounded-lg border border-slate-700/80 bg-slate-950/85 px-3 py-2 text-right shadow-lg ring-1 ring-black/20">
+                <div className={tooltipClass}>
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-300">
                         RMS
                     </p>
@@ -1337,10 +1366,10 @@ export default function NoiseLevelChart() {
             {error && payload && (
                 <p className="mb-3 text-sm text-red-300">Could not refresh noise data: {error}</p>
             )}
-            {audioEventError && (
+            {!isTileVariant && audioEventError && (
                 <p className="mb-3 text-sm text-red-300">Could not save chicken review: {audioEventError}</p>
             )}
-            <div className="relative">
+            {!isTileVariant && <div className="relative">
                 {isRefreshing && (
                     <div
                         className="pointer-events-none absolute inset-x-0 top-8 z-10 flex justify-center rounded-lg"
@@ -1438,147 +1467,160 @@ export default function NoiseLevelChart() {
                     </div>
                 )}
                 <svg
-                width={width}
-                height={height}
-                viewBox={`0 0 ${width} ${height}`}
-                className="block h-auto w-full overflow-visible"
-                role="img"
-                aria-label="Bar chart of RMS noise in dB versus time of day"
-            >
-                <g transform={`translate(${margin.left},${margin.top})`}>
-                    <defs>
-                        <linearGradient
-                            id="noiseBarFill"
-                            gradientUnits="userSpaceOnUse"
-                            x1={0}
-                            y1={innerH}
-                            x2={0}
-                            y2={0}
-                        >
-                            {noiseGradientStops.map((s, i) => (
-                                <stop key={i} offset={s.offset} stopColor={s.color} />
-                            ))}
-                        </linearGradient>
-                    </defs>
-                    {yScale.ticks(6).map((tick) => (
-                        <line
-                            key={`grid-${tick}`}
-                            x1={0}
-                            x2={innerW}
-                            y1={yScale(tick)}
-                            y2={yScale(tick)}
-                            stroke="#334155"
-                            strokeDasharray="4 6"
-                            strokeOpacity={0.85}
-                        />
-                    ))}
-                    {series.map((d, i) => {
-                        const cx = xScale(d.t)
-                        const x = cx - barWidthPx / 2
-                        const yTop = yScale(d.y)
-                        const h = Math.max(0, yBaseline - yTop)
-                        return (
-                            <rect
-                                key={`bar-${i}`}
-                                x={x}
-                                y={yTop}
-                                width={barWidthPx}
-                                height={h}
-                                fill={getBarFill(d)}
-                                rx={2}
-                                opacity={getBarOpacity(d)}
-                                stroke={clipPanel?.idx === i ? '#f59e0b' : hoverIdx === i ? '#f8fafc' : '#0f172a'}
-                                strokeWidth={clipPanel?.idx === i ? 2 : hoverIdx === i ? 1.5 : 0.5}
-                                strokeOpacity={clipPanel?.idx === i || hoverIdx === i ? 1 : 0.35}
-                            />
-                        )
-                    })}
-	                    {hoverIdx != null && series[hoverIdx] && (
-	                        <g pointerEvents="none">
-                            <line
-                                x1={xScale(series[hoverIdx].t)}
-                                x2={xScale(series[hoverIdx].t)}
-                                y1={0}
-                                y2={innerH}
-                                stroke="#94a3b8"
-                                strokeDasharray="4 4"
-                                strokeOpacity={0.9}
-                            />
-		                        </g>
-		                    )}
-                    {zoomSelection && (
-                        <g pointerEvents="none">
-                            <rect
-                                x={zoomSelection.x}
-                                y={0}
-                                width={zoomSelection.width}
-                                height={innerH}
-                                fill="#f59e0b"
-                                fillOpacity={0.18}
-                                stroke="#fbbf24"
-                                strokeWidth={1.5}
-                                strokeDasharray="6 4"
-                            />
-                            <text
-                                x={zoomSelection.x + zoomSelection.width / 2}
-                                y={16}
-                                textAnchor="middle"
-                                fill="#fde68a"
-                                fontSize={11}
-                                fontWeight={700}
+                    width={width}
+                    height={height}
+                    viewBox={`0 0 ${width} ${height}`}
+                    className={svgClass}
+                    role="img"
+                    aria-label="Bar chart of RMS noise in dB versus time of day"
+                >
+                    <g transform={`translate(${margin.left},${margin.top})`}>
+                        <defs>
+                            <linearGradient
+                                id="noiseBarFill"
+                                gradientUnits="userSpaceOnUse"
+                                x1={0}
+                                y1={innerH}
+                                x2={0}
+                                y2={0}
                             >
-                                {zoomSelection.label}
-                            </text>
-                        </g>
-                    )}
-	                    <rect
-	                        x={0}
-	                        y={0}
-	                        width={innerW}
-	                        height={innerH}
-	                        fill="transparent"
-	                        cursor={zoomDrag ? 'col-resize' : 'crosshair'}
-	                        onMouseMove={handlePlotMouseMove}
-	                        onMouseLeave={handlePlotMouseLeave}
-	                        onClick={handlePlotClick}
-                            onPointerDown={handlePlotPointerDown}
-                            onPointerMove={handlePlotPointerMove}
-                            onPointerUp={handlePlotPointerUp}
-                            onPointerCancel={handlePlotPointerCancel}
+                                {noiseGradientStops.map((s, i) => (
+                                    <stop key={i} offset={s.offset} stopColor={s.color} />
+                                ))}
+                            </linearGradient>
+                        </defs>
+                        {yScale.ticks(6).map((tick) => (
+                            <line
+                                key={`grid-${tick}`}
+                                x1={0}
+                                x2={innerW}
+                                y1={yScale(tick)}
+                                y2={yScale(tick)}
+                                stroke="#334155"
+                                strokeDasharray="4 6"
+                                strokeOpacity={0.85}
+                            />
+                        ))}
+                        {series.map((d, i) => {
+                            const cx = xScale(d.t)
+                            const x = cx - barWidthPx / 2
+                            const yTop = yScale(d.y)
+                            const h = Math.max(0, yBaseline - yTop)
+                            return (
+                                <rect
+                                    key={`bar-${i}`}
+                                    x={x}
+                                    y={yTop}
+                                    width={barWidthPx}
+                                    height={h}
+                                    fill={getBarFill(d)}
+                                    rx={2}
+                                    opacity={getBarOpacity(d)}
+                                    stroke={
+                                        clipPanel?.idx === i
+                                            ? '#f59e0b'
+                                            : hoverIdx === i
+                                              ? '#f8fafc'
+                                              : '#0f172a'
+                                    }
+                                    strokeWidth={
+                                        clipPanel?.idx === i ? 2 : hoverIdx === i ? 1.5 : 0.5
+                                    }
+                                    strokeOpacity={
+                                        clipPanel?.idx === i || hoverIdx === i ? 1 : 0.35
+                                    }
+                                />
+                            )
+                        })}
+                        {hoverIdx != null && series[hoverIdx] && (
+                            <g pointerEvents="none">
+                                <line
+                                    x1={xScale(series[hoverIdx].t)}
+                                    x2={xScale(series[hoverIdx].t)}
+                                    y1={0}
+                                    y2={innerH}
+                                    stroke="#94a3b8"
+                                    strokeDasharray="4 4"
+                                    strokeOpacity={0.9}
+                                />
+                            </g>
+                        )}
+                        {!isTileVariant && zoomSelection && (
+                            <g pointerEvents="none">
+                                <rect
+                                    x={zoomSelection.x}
+                                    y={0}
+                                    width={zoomSelection.width}
+                                    height={innerH}
+                                    fill="#f59e0b"
+                                    fillOpacity={0.18}
+                                    stroke="#fbbf24"
+                                    strokeWidth={1.5}
+                                    strokeDasharray="6 4"
+                                />
+                                <text
+                                    x={zoomSelection.x + zoomSelection.width / 2}
+                                    y={16}
+                                    textAnchor="middle"
+                                    fill="#fde68a"
+                                    fontSize={11}
+                                    fontWeight={700}
+                                >
+                                    {zoomSelection.label}
+                                </text>
+                            </g>
+                        )}
+                        <rect
+                            x={0}
+                            y={0}
+                            width={innerW}
+                            height={innerH}
+                            fill="transparent"
+                            cursor={isTileVariant ? 'default' : zoomDrag ? 'col-resize' : 'crosshair'}
+                            onMouseMove={handlePlotMouseMove}
+                            onMouseLeave={handlePlotMouseLeave}
+                            onClick={isTileVariant ? undefined : handlePlotClick}
+                            onPointerDown={isTileVariant ? undefined : handlePlotPointerDown}
+                            onPointerMove={isTileVariant ? undefined : handlePlotPointerMove}
+                            onPointerUp={isTileVariant ? undefined : handlePlotPointerUp}
+                            onPointerCancel={isTileVariant ? undefined : handlePlotPointerCancel}
                             style={{ touchAction: 'none' }}
-	                    />
-                    {yScale.ticks(6).map((tick) => (
-                        <text
-                            key={`yt-${tick}`}
-                            x={-12}
-                            y={yScale(tick)}
-                            dy="0.35em"
-                            textAnchor="end"
-                            fill="#cbd5e1"
-                            fontSize={12}
-                        >
-                            {formatDbTick(tick)}
-                        </text>
-                    ))}
-                    {xScale.ticks(6).map((t, i) => (
-                        <g key={i} transform={`translate(${xScale(t)},${innerH})`}>
-                            <line y1={0} y2={6} stroke="#64748b" />
-                            <text y={22} textAnchor="middle" fill="#94a3b8" fontSize={11}>
-                                {xTickFormatFn(t)}
+                        />
+                        {!isTileVariant &&
+                            yScale.ticks(6).map((tick) => (
+                                <text
+                                    key={`yt-${tick}`}
+                                    x={-12}
+                                    y={yScale(tick)}
+                                    dy="0.35em"
+                                    textAnchor="end"
+                                    fill="#cbd5e1"
+                                    fontSize={12}
+                                >
+                                    {formatDbTick(tick)}
+                                </text>
+                            ))}
+                        {xScale.ticks(isTileVariant ? 4 : 6).map((t, i) => (
+                            <g key={i} transform={`translate(${xScale(t)},${innerH})`}>
+                                <line y1={0} y2={6} stroke="#64748b" />
+                                <text y={22} textAnchor="middle" fill="#94a3b8" fontSize={11}>
+                                    {xTickFormatFn(t)}
+                                </text>
+                            </g>
+                        ))}
+                        {!isTileVariant && (
+                            <text
+                                x={innerW / 2}
+                                y={innerH + 42}
+                                textAnchor="middle"
+                                fill="#94a3b8"
+                                fontSize={12}
+                            >
+                                {xAxisLabel}
                             </text>
-                        </g>
-                    ))}
-                    <text
-                        x={innerW / 2}
-                        y={innerH + 42}
-                        textAnchor="middle"
-                        fill="#94a3b8"
-                        fontSize={12}
-                    >
-                        {xAxisLabel}
-                    </text>
-                </g>
-            </svg>
+                        )}
+                    </g>
+                </svg>
                 <div className="mx-auto mt-2 grid max-w-md grid-cols-3 gap-2 border-t border-slate-700/70 pt-3 text-center text-xs text-slate-300">
                     <div>
                         <span className="block text-[10px] uppercase tracking-wide text-slate-500">
@@ -1602,7 +1644,7 @@ export default function NoiseLevelChart() {
                         Score is based on confirmed chicken labels in the bars currently shown.
                     </p>
                 </div>
-            </div>
+            </div>}
         </div>
     )
 }
