@@ -89,19 +89,23 @@ function addLocalMonths(value, months) {
     return new Date(date.getFullYear(), date.getMonth() + months, 1)
 }
 
-function addLocalYears(value, years) {
-    const date = new Date(value)
-    return new Date(date.getFullYear() + years, date.getMonth(), date.getDate())
-}
-
 function monthEndLocal(value) {
     const date = new Date(value)
     return new Date(date.getFullYear(), date.getMonth() + 1, 0)
 }
 
-function currentMonthPreviousYearRange() {
+function isFullCalendarMonth(start, end) {
+    return isSameLocalDay(start, monthStartLocal(start)) && isSameLocalDay(end, monthEndLocal(start))
+}
+
+function inclusiveDayCount(start, end) {
+    const millisecondsPerDay = 24 * 60 * 60 * 1000
+    return Math.max(1, Math.round((dayStartLocal(end).getTime() - dayStartLocal(start).getTime()) / millisecondsPerDay) + 1)
+}
+
+function currentMonthRange() {
     const now = new Date()
-    const start = new Date(now.getFullYear() - 1, now.getMonth(), 1)
+    const start = new Date(now.getFullYear(), now.getMonth(), 1)
     return {
         start,
         end: monthEndLocal(start),
@@ -477,11 +481,11 @@ function HistoricalWeatherChart() {
     const [overlayRefreshing, setOverlayRefreshing] = useState(false)
     const [error, setError] = useState(null)
     const [overlayError, setOverlayError] = useState(null)
-    const [selectedDay, setSelectedDay] = useState(() => dayStartLocal(currentMonthPreviousYearRange().start))
-    const [rangeApplied, setRangeApplied] = useState(() => currentMonthPreviousYearRange())
+    const [selectedDay, setSelectedDay] = useState(() => dayStartLocal(currentMonthRange().start))
+    const [rangeApplied, setRangeApplied] = useState(() => currentMonthRange())
     const [rangeDraft, setRangeDraft] = useState({ start: null, end: null })
     const [rangePickerOpen, setRangePickerOpen] = useState(false)
-    const [calendarMonth, setCalendarMonth] = useState(() => monthStartLocal(currentMonthPreviousYearRange().start))
+    const [calendarMonth, setCalendarMonth] = useState(() => monthStartLocal(currentMonthRange().start))
     const [rangeValidationError, setRangeValidationError] = useState(null)
     const [visibleSeries, setVisibleSeries] = useState({
         temperature: true,
@@ -512,12 +516,11 @@ function HistoricalWeatherChart() {
         const requestedEnd = new Date(currentYear, currentRange.end.getMonth(), currentRange.end.getDate())
         const today = dayStartLocal(new Date())
         const end = isBeforeLocalDay(today, requestedEnd) ? today : requestedEnd
-        return { start, end }
+        return { start: dayStartLocal(start), end }
     }, [currentRange])
 
-    const overlayAvailable =
-        currentRange.start.getFullYear() !== new Date().getFullYear() &&
-        !isBeforeLocalDay(overlayRange.end, overlayRange.start)
+    const isHistoricalRange = currentRange.start.getFullYear() !== new Date().getFullYear()
+    const overlayAvailable = isHistoricalRange && !isBeforeLocalDay(overlayRange.end, overlayRange.start)
 
     useEffect(() => {
         let cancelled = false
@@ -698,6 +701,8 @@ function HistoricalWeatherChart() {
         const tempScale = (temp) => innerH - ((temp - tempMin) / tempSpan) * innerH
         const humidityScale = (humidity) => innerH - (humidity / 100) * innerH
         const rainScale = (rain) => (rain / maxRain) * innerH * 0.32
+        const todayDate = dayStartLocal(new Date())
+        const todayVisible = !isBeforeLocalDay(todayDate, currentRange.start) && !isBeforeLocalDay(currentRange.end, todayDate)
         const tempTicks = Array.from({ length: 5 }, (_, index) => tempMin + (tempSpan / 4) * index)
         const tickIndexes = Array.from(
             new Set([0, 1, 2, 3, 4].map((index) => Math.round((visiblePoints.length - 1) * (index / 4))))
@@ -716,6 +721,13 @@ function HistoricalWeatherChart() {
             tempTicks,
             xTicks,
             barWidth,
+            todayMarker: todayVisible
+                ? {
+                    x: xScale(todayDate),
+                    labelX: Math.min(innerW - 28, Math.max(28, xScale(todayDate))),
+                    labelAnchor: xScale(todayDate) < 48 ? 'start' : xScale(todayDate) > innerW - 48 ? 'end' : 'middle',
+                }
+                : null,
             tempSegments: temperatureLineSegments(visiblePoints, xScale, tempScale),
             humidityPath: linePath(visiblePoints, xScale, humidityScale, 'humidity'),
             overlayTempSegments: temperatureLineSegments(visibleOverlayPoints, xScale, tempScale),
@@ -742,16 +754,28 @@ function HistoricalWeatherChart() {
 
     const activeDateLabel = formatDayRange(currentRange.start, currentRange.end)
     const isSelectedDayToday = isSameLocalDay(selectedDay, new Date())
-    const statusMessage =
-        loading
-            ? { text: 'Loading historical weather...', className: 'text-sky-100/75' }
+    const navigationUnit = rangeApplied?.start && rangeApplied?.end && !isSameLocalDay(rangeApplied.start, rangeApplied.end)
+        ? isFullCalendarMonth(dayStartLocal(rangeApplied.start), dayStartLocal(rangeApplied.end))
+            ? 'month'
+            : 'range'
+        : 'day'
+    const showChartLoadingPlaceholder = !error && (loading || refreshing) && (!chart || !summary)
+    const chartBusyMessage =
+        showChartLoadingPlaceholder
+            ? loading
+                ? 'Loading chart...'
+                : 'Updating...'
             : refreshing
-              ? { text: 'Updating...', className: 'text-cyan-100' }
+              ? 'Updating...'
               : showCurrentYearOverlay && overlayLoading
-                ? { text: 'Loading current-year overlay...', className: 'text-fuchsia-100' }
+                ? 'Loading overlay...'
                 : showCurrentYearOverlay && overlayRefreshing
-                  ? { text: 'Updating current-year overlay...', className: 'text-fuchsia-100' }
+                  ? 'Updating overlay...'
                   : null
+    const statusMessage =
+        showCurrentYearOverlay && overlayError
+            ? { text: `Could not load current-year overlay: ${overlayError}`, className: 'text-red-100' }
+            : null
 
     const calendarCells = useMemo(() => {
         const firstOfMonth = monthStartLocal(calendarMonth)
@@ -768,11 +792,43 @@ function HistoricalWeatherChart() {
         [calendarMonth]
     )
 
-    function handleDayStep(days) {
-        setRangeApplied(null)
+    function handleDateStep(direction) {
         setRangePickerOpen(false)
         setRangeValidationError(null)
-        setSelectedDay((current) => dayStartLocal(addLocalDays(current, days)))
+
+        if (!rangeApplied?.start || !rangeApplied?.end) {
+            setSelectedDay((current) => dayStartLocal(addLocalDays(current, direction)))
+            return
+        }
+
+        const start = dayStartLocal(rangeApplied.start)
+        const end = dayStartLocal(rangeApplied.end)
+
+        if (isSameLocalDay(start, end)) {
+            const nextDay = dayStartLocal(addLocalDays(start, direction))
+            setRangeApplied(null)
+            setSelectedDay(nextDay)
+            return
+        }
+
+        if (isFullCalendarMonth(start, end)) {
+            const nextStart = addLocalMonths(start, direction)
+            const nextRange = {
+                start: nextStart,
+                end: monthEndLocal(nextStart),
+            }
+            setRangeApplied(nextRange)
+            setSelectedDay(dayStartLocal(nextRange.start))
+            return
+        }
+
+        const days = inclusiveDayCount(start, end) * direction
+        const nextRange = {
+            start: dayStartLocal(addLocalDays(start, days)),
+            end: dayStartLocal(addLocalDays(end, days)),
+        }
+        setRangeApplied(nextRange)
+        setSelectedDay(dayStartLocal(nextRange.start))
     }
 
     function handleTodayClick() {
@@ -780,6 +836,20 @@ function HistoricalWeatherChart() {
         setRangePickerOpen(false)
         setRangeValidationError(null)
         setSelectedDay(dayStartLocal(new Date()))
+    }
+
+    function handleCurrentMonthClick() {
+        const today = new Date()
+        const start = monthStartLocal(today)
+        const nextRange = {
+            start,
+            end: monthEndLocal(start),
+        }
+        setRangeApplied(nextRange)
+        setRangePickerOpen(false)
+        setRangeValidationError(null)
+        setSelectedDay(dayStartLocal(start))
+        setCalendarMonth(start)
     }
 
     function openRangePicker() {
@@ -939,13 +1009,22 @@ function HistoricalWeatherChart() {
                     </p>
                     <h2 className="mt-1 text-2xl font-semibold text-white">Observed weather</h2>
                 </div>
-                <button
-                    type="button"
-                    onClick={handleTodayClick}
-                    className="h-9 rounded-lg bg-cyan-300 px-3 text-sm font-semibold text-blue-950 transition-colors hover:bg-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-                >
-                    Today
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={handleTodayClick}
+                        className="h-9 rounded-lg bg-cyan-300 px-3 text-sm font-semibold text-blue-950 transition-colors hover:bg-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                    >
+                        Today
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleCurrentMonthClick}
+                        className="h-9 rounded-lg bg-sky-900/90 px-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                    >
+                        Month
+                    </button>
+                </div>
             </div>
 
             <div className="mb-4 rounded-lg border border-sky-100/15 bg-sky-950/35 p-3">
@@ -960,10 +1039,10 @@ function HistoricalWeatherChart() {
             <div className="mx-auto mb-4 grid w-full max-w-[28.5rem] grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center justify-center gap-2">
                 <button
                     type="button"
-                    onClick={() => handleDayStep(-1)}
+                    onClick={() => handleDateStep(-1)}
                     className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-900/90 text-xl leading-none text-sky-100 transition-colors hover:bg-sky-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
-                    aria-label="Show previous day"
-                    title="Previous day"
+                    aria-label={`Show previous ${navigationUnit}`}
+                    title={`Previous ${navigationUnit}`}
                 >
                     ‹
                 </button>
@@ -979,11 +1058,11 @@ function HistoricalWeatherChart() {
                 </button>
                 <button
                     type="button"
-                    onClick={() => handleDayStep(1)}
+                    onClick={() => handleDateStep(1)}
                     disabled={!rangeApplied && isSelectedDayToday}
                     className="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-900/90 text-xl leading-none text-sky-100 transition-colors hover:bg-sky-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-sky-900/90"
-                    aria-label="Show next day"
-                    title="Next day"
+                    aria-label={`Show next ${navigationUnit}`}
+                    title={`Next ${navigationUnit}`}
                 >
                     ›
                 </button>
@@ -995,32 +1074,28 @@ function HistoricalWeatherChart() {
                 {statusMessage && <span className={statusMessage.className}>{statusMessage.text}</span>}
             </div>
             {error && <div className="text-red-100">Could not load historical weather: {error}</div>}
-            {showCurrentYearOverlay && overlayError && <div className="text-red-100">Could not load current-year overlay: {overlayError}</div>}
-            {!loading && !refreshing && !error && visiblePoints.length === 0 && (
-                <div className="text-sky-100/75">No historical weather data available.</div>
-            )}
 
-            {!loading && !error && chart && summary && (
+            {!error && (
                 <>
                     <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <WeatherMetric
                             label="Observed high"
-                            value={`${Math.round(summary.high)}°F`}
-                            helper={`Low ${Math.round(summary.low)}°F`}
+                            value={summary ? `${Math.round(summary.high)}°F` : '--'}
+                            helper={summary ? `Low ${Math.round(summary.low)}°F` : activeDateLabel}
                         />
                         <WeatherMetric
                             label="Avg humidity"
-                            value={summary.humidity == null ? '--' : `${formatNumber(summary.humidity)}%`}
-                            helper={`${visiblePoints.length} observations`}
+                            value={summary?.humidity == null ? '--' : `${formatNumber(summary.humidity)}%`}
+                            helper={summary ? `${visiblePoints.length} observations` : '0 observations'}
                         />
                         <WeatherMetric
                             label="Rain"
-                            value={formatNumber(summary.rainTotal, 2)}
+                            value={summary ? formatNumber(summary.rainTotal, 2) : '--'}
                             helper="Accumulated last-hour readings"
                         />
                         <WeatherMetric
                             label="Avg wind"
-                            value={summary.wind == null ? '--' : `${formatNumber(summary.wind, 1)} mph`}
+                            value={summary?.wind == null ? '--' : `${formatNumber(summary.wind, 1)} mph`}
                             helper={activeDateLabel}
                         />
                     </div>
@@ -1064,45 +1139,54 @@ function HistoricalWeatherChart() {
                             <span className="h-3 w-3 rounded-sm bg-sky-400/35" />
                             Rain
                         </button>
-                        {overlayAvailable && (
-                            <>
-                                <span className="flex items-center gap-2 rounded-md border border-sky-100/10 bg-sky-950/30 px-3 py-2 font-semibold text-sky-100/65">
-                                    <span className="h-1 w-5 rounded-full" style={{ background: TEMP_COLOR_SWATCH }} />
-                                    Baseline
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowCurrentYearOverlay((current) => !current)}
-                                    className={`flex items-center gap-2 rounded-md border px-3 py-2 font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
-                                        showCurrentYearOverlay
-                                            ? 'border-fuchsia-200/30 bg-fuchsia-300/10 text-fuchsia-50'
-                                            : 'border-sky-100/10 bg-sky-950/40 text-sky-100/45'
-                                    }`}
-                                    aria-pressed={showCurrentYearOverlay}
-                                >
-                                    <span className="h-0.5 w-5 border-t border-dashed border-rose-300 opacity-75" />
-                                    {new Date().getFullYear()} overlay
-                                </button>
-                            </>
+                        {isHistoricalRange && (
+                            <button
+                                type="button"
+                                onClick={() => setShowCurrentYearOverlay((current) => !current)}
+                                disabled={!overlayAvailable}
+                                className={`flex items-center gap-2 rounded-md border px-3 py-2 font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-45 ${
+                                    showCurrentYearOverlay && overlayAvailable
+                                        ? 'border-fuchsia-200/30 bg-fuchsia-300/10 text-fuchsia-50'
+                                        : 'border-sky-100/10 bg-sky-950/40 text-sky-100/45'
+                                }`}
+                                aria-pressed={showCurrentYearOverlay && overlayAvailable}
+                            >
+                                <span className="h-0.5 w-5 border-t border-dashed border-rose-300 opacity-75" />
+                                {new Date().getFullYear()} overlay
+                            </button>
                         )}
                     </div>
-                    {!hasVisibleSeries && (
+                    {showChartLoadingPlaceholder ? (
+                        <div
+                            className="flex w-full items-center justify-center rounded-lg border border-sky-100/15 bg-sky-950/35 p-5 text-sky-100/75"
+                            style={{ aspectRatio: `${width} / ${height}` }}
+                        >
+                            <span>{chartBusyMessage}</span>
+                        </div>
+                    ) : !loading && !refreshing && visiblePoints.length === 0 ? (
+                        <div
+                            className="flex w-full items-center justify-center rounded-lg border border-sky-100/15 bg-sky-950/35 p-5 text-sky-100/75"
+                            style={{ aspectRatio: `${width} / ${height}` }}
+                        >
+                            <span>No historical weather data available.</span>
+                        </div>
+                    ) : !hasVisibleSeries ? (
                         <div
                             className="flex w-full items-center justify-center rounded-lg border border-sky-100/15 bg-sky-950/45 p-5 text-sky-100/75"
                             style={{ aspectRatio: `${width} / ${height}` }}
                         >
                             <span>Select at least one weather metric to display.</span>
                         </div>
-                    )}
-                    {hasVisibleSeries && (
-                        <svg
-                            width={width}
-                            height={height}
-                            viewBox={`0 0 ${width} ${height}`}
-                            className="block h-auto w-full overflow-visible"
-                            role="img"
-                            aria-label="Historical weather chart showing selected observed weather metrics"
-                        >
+                    ) : chart && summary ? (
+                        <div className="relative">
+                            <svg
+                                width={width}
+                                height={height}
+                                viewBox={`0 0 ${width} ${height}`}
+                                className="block h-auto w-full overflow-visible"
+                                role="img"
+                                aria-label="Historical weather chart showing selected observed weather metrics"
+                            >
                             <g transform={`translate(${margin.left},${margin.top})`}>
                                 {(visibleSeries.temperature ? chart.tempTicks : [0, 25, 50, 75, 100]).map((tick) => (
                                     <g key={`history-temp-grid-${tick}`}>
@@ -1209,6 +1293,37 @@ function HistoricalWeatherChart() {
                                         opacity="0.45"
                                     />
                                 )}
+                                {chart.todayMarker && (
+                                    <g>
+                                        <line
+                                            x1={chart.todayMarker.x}
+                                            x2={chart.todayMarker.x}
+                                            y1={0}
+                                            y2={innerH}
+                                            stroke="#fef08a"
+                                            strokeOpacity="0.58"
+                                            strokeDasharray="4 6"
+                                        />
+                                        <circle
+                                            cx={chart.todayMarker.x}
+                                            cy={0}
+                                            r={4}
+                                            fill="#fef08a"
+                                            stroke="#0f172a"
+                                            strokeWidth={1.5}
+                                        />
+                                        <text
+                                            x={chart.todayMarker.labelX}
+                                            y={-9}
+                                            textAnchor={chart.todayMarker.labelAnchor}
+                                            fill="#fef9c3"
+                                            fontSize={12}
+                                            fontWeight={700}
+                                        >
+                                            Today
+                                        </text>
+                                    </g>
+                                )}
                                 {chart.xTicks.map((point) => (
                                     <g
                                         key={`history-x-${point.time.toISOString()}`}
@@ -1234,8 +1349,16 @@ function HistoricalWeatherChart() {
                                     </text>
                                 ))}
                             </g>
-                        </svg>
-                    )}
+                            </svg>
+                            {chartBusyMessage && (
+                                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                                    <span className="rounded-md border border-sky-100/15 bg-sky-950/80 px-3 py-2 text-sm font-semibold text-cyan-100 shadow-lg">
+                                        {chartBusyMessage}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    ) : null}
                 </>
             )}
         </section>
