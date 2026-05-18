@@ -510,17 +510,22 @@ function HistoricalWeatherChart() {
         return { start: day, end: day }
     }, [rangeApplied, selectedDay])
 
+    const currentYear = new Date().getFullYear()
+    const isCurrentYearRange = currentRange.start.getFullYear() === currentYear
+    const overlayYear = isCurrentYearRange ? currentYear - 1 : currentYear
+
     const overlayRange = useMemo(() => {
         const currentYear = new Date().getFullYear()
-        const start = new Date(currentYear, currentRange.start.getMonth(), currentRange.start.getDate())
-        const requestedEnd = new Date(currentYear, currentRange.end.getMonth(), currentRange.end.getDate())
+        const isCurrentYearRange = currentRange.start.getFullYear() === currentYear
+        const targetYear = isCurrentYearRange ? currentYear - 1 : currentYear
+        const start = new Date(targetYear, currentRange.start.getMonth(), currentRange.start.getDate())
+        const requestedEnd = new Date(targetYear, currentRange.end.getMonth(), currentRange.end.getDate())
         const today = dayStartLocal(new Date())
-        const end = isBeforeLocalDay(today, requestedEnd) ? today : requestedEnd
+        const end = !isCurrentYearRange && isBeforeLocalDay(today, requestedEnd) ? today : requestedEnd
         return { start: dayStartLocal(start), end }
     }, [currentRange])
 
-    const isHistoricalRange = currentRange.start.getFullYear() !== new Date().getFullYear()
-    const overlayAvailable = isHistoricalRange && !isBeforeLocalDay(overlayRange.end, overlayRange.start)
+    const overlayAvailable = currentRange.start.getFullYear() !== overlayYear && !isBeforeLocalDay(overlayRange.end, overlayRange.start)
 
     useEffect(() => {
         let cancelled = false
@@ -1139,22 +1144,20 @@ function HistoricalWeatherChart() {
                             <span className="h-3 w-3 rounded-sm bg-sky-400/35" />
                             Rain
                         </button>
-                        {isHistoricalRange && (
-                            <button
-                                type="button"
-                                onClick={() => setShowCurrentYearOverlay((current) => !current)}
-                                disabled={!overlayAvailable}
-                                className={`flex items-center gap-2 rounded-md border px-3 py-2 font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-45 ${
-                                    showCurrentYearOverlay && overlayAvailable
-                                        ? 'border-fuchsia-200/30 bg-fuchsia-300/10 text-fuchsia-50'
-                                        : 'border-sky-100/10 bg-sky-950/40 text-sky-100/45'
-                                }`}
-                                aria-pressed={showCurrentYearOverlay && overlayAvailable}
-                            >
-                                <span className="h-0.5 w-5 border-t border-dashed border-rose-300 opacity-75" />
-                                {new Date().getFullYear()} overlay
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={() => setShowCurrentYearOverlay((current) => !current)}
+                            disabled={!overlayAvailable}
+                            className={`flex items-center gap-2 rounded-md border px-3 py-2 font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-45 ${
+                                showCurrentYearOverlay && overlayAvailable
+                                    ? 'border-fuchsia-200/30 bg-fuchsia-300/10 text-fuchsia-50'
+                                    : 'border-sky-100/10 bg-sky-950/40 text-sky-100/45'
+                            }`}
+                            aria-pressed={showCurrentYearOverlay && overlayAvailable}
+                        >
+                            <span className="h-0.5 w-5 border-t border-dashed border-rose-300 opacity-75" />
+                            {overlayYear} overlay
+                        </button>
                     </div>
                     {showChartLoadingPlaceholder ? (
                         <div
