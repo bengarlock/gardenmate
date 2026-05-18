@@ -7,6 +7,9 @@ const HISTORICAL_WEATHER_API = 'https://bengarlock.com/api/v1/garden/weather/'
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
 const WEATHER_PROXY_API = `${APP_BASE_PATH}/api/weather`
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const TEMP_COLOR_MIN_F = 0
+const TEMP_COLOR_MAX_F = 100
+const TEMP_COLOR_SWATCH = 'linear-gradient(90deg, hsl(220, 90%, 56%), hsl(170, 90%, 56%), hsl(90, 90%, 56%), hsl(45, 90%, 56%), hsl(0, 90%, 56%))'
 
 function celsiusToFahrenheit(value) {
     return value == null || Number.isNaN(Number(value)) ? null : (Number(value) * 9) / 5 + 32
@@ -20,6 +23,13 @@ function formatNumber(value, digits = 0) {
 function formatTemperature(value) {
     const temp = celsiusToFahrenheit(value)
     return temp == null ? '--' : `${Math.round(temp)}°F`
+}
+
+function temperatureStrokeColor(tempF) {
+    if (!Number.isFinite(tempF)) return 'hsl(45, 90%, 56%)'
+    const ratio = Math.min(1, Math.max(0, (tempF - TEMP_COLOR_MIN_F) / (TEMP_COLOR_MAX_F - TEMP_COLOR_MIN_F)))
+    const hue = Math.round(220 - ratio * 220)
+    return `hsl(${hue}, 90%, 56%)`
 }
 
 function formatTime(epochSeconds) {
@@ -440,6 +450,22 @@ function linePath(points, xScale, yScale, valueKey) {
         .join(' ')
 }
 
+function temperatureLineSegments(points, xScale, yScale) {
+    const validPoints = points.filter((point) => Number.isFinite(point.temp))
+    return validPoints.slice(1).map((point, index) => {
+        const previous = validPoints[index]
+        const temp = (previous.temp + point.temp) / 2
+        return {
+            id: `${previous.id ?? index}-${point.id ?? index + 1}`,
+            x1: xScale(previous.chartTime ?? previous.time),
+            y1: yScale(previous.temp),
+            x2: xScale(point.chartTime ?? point.time),
+            y2: yScale(point.temp),
+            color: temperatureStrokeColor(temp),
+        }
+    })
+}
+
 function HistoricalWeatherChart() {
     const firstFetchRef = useRef(true)
     const firstOverlayFetchRef = useRef(true)
@@ -459,10 +485,10 @@ function HistoricalWeatherChart() {
     const [rangeValidationError, setRangeValidationError] = useState(null)
     const [visibleSeries, setVisibleSeries] = useState({
         temperature: true,
-        humidity: true,
+        humidity: false,
         rain: true,
     })
-    const [showCurrentYearOverlay, setShowCurrentYearOverlay] = useState(true)
+    const [showCurrentYearOverlay, setShowCurrentYearOverlay] = useState(false)
     const width = 900
     const height = 320
     const margin = { top: 22, right: 58, bottom: 54, left: 58 }
@@ -535,8 +561,8 @@ function HistoricalWeatherChart() {
     useEffect(() => {
         let cancelled = false
 
-        if (!overlayAvailable) {
-            setOverlayRecords([])
+        if (!overlayAvailable || !showCurrentYearOverlay) {
+            if (!overlayAvailable) setOverlayRecords([])
             setOverlayLoading(false)
             setOverlayRefreshing(false)
             setOverlayError(null)
@@ -580,7 +606,7 @@ function HistoricalWeatherChart() {
         return () => {
             cancelled = true
         }
-    }, [overlayAvailable, overlayRange])
+    }, [overlayAvailable, overlayRange, showCurrentYearOverlay])
 
     const points = useMemo(
         () =>
@@ -690,9 +716,9 @@ function HistoricalWeatherChart() {
             tempTicks,
             xTicks,
             barWidth,
-            tempPath: linePath(visiblePoints, xScale, tempScale, 'temp'),
+            tempSegments: temperatureLineSegments(visiblePoints, xScale, tempScale),
             humidityPath: linePath(visiblePoints, xScale, humidityScale, 'humidity'),
-            overlayTempPath: linePath(visibleOverlayPoints, xScale, tempScale, 'temp'),
+            overlayTempSegments: temperatureLineSegments(visibleOverlayPoints, xScale, tempScale),
             overlayHumidityPath: linePath(visibleOverlayPoints, xScale, humidityScale, 'humidity'),
         }
     }, [currentRange, innerH, innerW, visibleOverlayPoints, visiblePoints])
@@ -715,8 +741,17 @@ function HistoricalWeatherChart() {
     }, [visiblePoints])
 
     const activeDateLabel = formatDayRange(currentRange.start, currentRange.end)
-    const overlayDateLabel = overlayAvailable ? formatDayRange(overlayRange.start, overlayRange.end) : 'No current-year match'
     const isSelectedDayToday = isSameLocalDay(selectedDay, new Date())
+    const statusMessage =
+        loading
+            ? { text: 'Loading historical weather...', className: 'text-sky-100/75' }
+            : refreshing
+              ? { text: 'Updating...', className: 'text-cyan-100' }
+              : showCurrentYearOverlay && overlayLoading
+                ? { text: 'Loading current-year overlay...', className: 'text-fuchsia-100' }
+                : showCurrentYearOverlay && overlayRefreshing
+                  ? { text: 'Updating current-year overlay...', className: 'text-fuchsia-100' }
+                  : null
 
     const calendarCells = useMemo(() => {
         const firstOfMonth = monthStartLocal(calendarMonth)
@@ -913,26 +948,13 @@ function HistoricalWeatherChart() {
                 </button>
             </div>
 
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-sky-100/15 bg-sky-950/35 p-3">
+            <div className="mb-4 rounded-lg border border-sky-100/15 bg-sky-950/35 p-3">
                 <div>
                     <p className="text-xs font-semibold uppercase tracking-wide text-sky-200/70">
                         Baseline
                     </p>
                     <p className="text-sm font-semibold text-sky-50">{activeDateLabel}</p>
                 </div>
-                <button
-                    type="button"
-                    onClick={() => setShowCurrentYearOverlay((current) => !current)}
-                    disabled={!overlayAvailable}
-                    className={`rounded-md border px-3 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-45 ${
-                        showCurrentYearOverlay && overlayAvailable
-                            ? 'border-fuchsia-200/40 bg-fuchsia-300/15 text-white'
-                            : 'border-sky-100/10 bg-sky-950/40 text-sky-100/60'
-                    }`}
-                    aria-pressed={showCurrentYearOverlay && overlayAvailable}
-                >
-                    Overlay {new Date().getFullYear()}: {overlayDateLabel}
-                </button>
             </div>
 
             <div className="mx-auto mb-4 grid w-full max-w-[28.5rem] grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center justify-center gap-2">
@@ -969,10 +991,9 @@ function HistoricalWeatherChart() {
 
             {rangePicker}
 
-            {loading && <div className="text-sky-100/75">Loading historical weather...</div>}
-            {refreshing && <div className="mb-3 text-sm font-semibold text-cyan-100">Updating...</div>}
-            {showCurrentYearOverlay && overlayLoading && <div className="mb-3 text-sm font-semibold text-fuchsia-100">Loading current-year overlay...</div>}
-            {showCurrentYearOverlay && overlayRefreshing && <div className="mb-3 text-sm font-semibold text-fuchsia-100">Updating current-year overlay...</div>}
+            <div className="mb-3 min-h-[1.25rem] text-sm font-semibold" aria-live="polite">
+                {statusMessage && <span className={statusMessage.className}>{statusMessage.text}</span>}
+            </div>
             {error && <div className="text-red-100">Could not load historical weather: {error}</div>}
             {showCurrentYearOverlay && overlayError && <div className="text-red-100">Could not load current-year overlay: {overlayError}</div>}
             {!loading && !refreshing && !error && visiblePoints.length === 0 && (
@@ -1014,7 +1035,7 @@ function HistoricalWeatherChart() {
                             }`}
                             aria-pressed={visibleSeries.temperature}
                         >
-                            <span className="h-0.5 w-5 rounded-full bg-amber-300" />
+                            <span className="h-1 w-5 rounded-full" style={{ background: TEMP_COLOR_SWATCH }} />
                             Temperature
                         </button>
                         <button
@@ -1043,16 +1064,25 @@ function HistoricalWeatherChart() {
                             <span className="h-3 w-3 rounded-sm bg-sky-400/35" />
                             Rain
                         </button>
-                        {showCurrentYearOverlay && overlayAvailable && (
+                        {overlayAvailable && (
                             <>
                                 <span className="flex items-center gap-2 rounded-md border border-sky-100/10 bg-sky-950/30 px-3 py-2 font-semibold text-sky-100/65">
-                                    <span className="h-0.5 w-5 rounded-full bg-amber-300" />
+                                    <span className="h-1 w-5 rounded-full" style={{ background: TEMP_COLOR_SWATCH }} />
                                     Baseline
                                 </span>
-                                <span className="flex items-center gap-2 rounded-md border border-fuchsia-200/20 bg-fuchsia-300/10 px-3 py-2 font-semibold text-fuchsia-50">
-                                    <span className="h-0.5 w-5 border-t border-dashed border-rose-300" />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCurrentYearOverlay((current) => !current)}
+                                    className={`flex items-center gap-2 rounded-md border px-3 py-2 font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
+                                        showCurrentYearOverlay
+                                            ? 'border-fuchsia-200/30 bg-fuchsia-300/10 text-fuchsia-50'
+                                            : 'border-sky-100/10 bg-sky-950/40 text-sky-100/45'
+                                    }`}
+                                    aria-pressed={showCurrentYearOverlay}
+                                >
+                                    <span className="h-0.5 w-5 border-t border-dashed border-rose-300 opacity-75" />
                                     {new Date().getFullYear()} overlay
-                                </span>
+                                </button>
                             </>
                         )}
                     </div>
@@ -1125,32 +1155,37 @@ function HistoricalWeatherChart() {
                                             width={Math.max(2, chart.barWidth * 0.72)}
                                             height={barHeight}
                                             fill="#f0abfc"
-                                            opacity="0.3"
+                                            opacity="0.16"
                                             rx={1}
                                         />
                                     )
                                 })}
-                                {visibleSeries.temperature && chart.tempPath && (
-                                    <path
-                                        d={chart.tempPath}
-                                        fill="none"
-                                        stroke="#fcd34d"
+                                {visibleSeries.temperature && chart.tempSegments.map((segment) => (
+                                    <line
+                                        key={`history-temp-${segment.id}`}
+                                        x1={segment.x1}
+                                        y1={segment.y1}
+                                        x2={segment.x2}
+                                        y2={segment.y2}
+                                        stroke={segment.color}
                                         strokeWidth={3}
                                         strokeLinecap="round"
-                                        strokeLinejoin="round"
                                     />
-                                )}
-                                {visibleSeries.temperature && showCurrentYearOverlay && chart.overlayTempPath && (
-                                    <path
-                                        d={chart.overlayTempPath}
-                                        fill="none"
-                                        stroke="#fb7185"
-                                        strokeWidth={2.5}
-                                        strokeDasharray="8 6"
+                                ))}
+                                {visibleSeries.temperature && showCurrentYearOverlay && chart.overlayTempSegments.map((segment) => (
+                                    <line
+                                        key={`history-overlay-temp-${segment.id}`}
+                                        x1={segment.x1}
+                                        y1={segment.y1}
+                                        x2={segment.x2}
+                                        y2={segment.y2}
+                                        stroke={segment.color}
+                                        strokeWidth={1.75}
+                                        strokeDasharray="5 8"
                                         strokeLinecap="round"
-                                        strokeLinejoin="round"
+                                        opacity="0.42"
                                     />
-                                )}
+                                ))}
                                 {visibleSeries.humidity && chart.humidityPath && (
                                     <path
                                         d={chart.humidityPath}
@@ -1167,10 +1202,11 @@ function HistoricalWeatherChart() {
                                         d={chart.overlayHumidityPath}
                                         fill="none"
                                         stroke="#c084fc"
-                                        strokeWidth={2}
+                                        strokeWidth={1.5}
                                         strokeDasharray="2 6"
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
+                                        opacity="0.45"
                                     />
                                 )}
                                 {chart.xTicks.map((point) => (
