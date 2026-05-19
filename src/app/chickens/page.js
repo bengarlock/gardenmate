@@ -2,6 +2,7 @@ import ChickenPageHeader from '@/app/chickens/ChickenPageHeader'
 import ChickenSubNav from '@/app/chickens/ChickenSubNav'
 import DangerousHeatAdvisory from '@/app/chickens/DangerousHeatAdvisory'
 import NoiseLevelChart from '@/app/chickens/NoiseLevelChart'
+import CoopTemperatureTile from '@/app/chickens/CoopTemperatureTile'
 
 const Chickens = () => {
 
@@ -16,6 +17,7 @@ const Chickens = () => {
 
                 <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <NoiseLevelChart variant="tile" />
+                    <CoopTemperatureTile />
                 </section>
             </div>
         </main>
