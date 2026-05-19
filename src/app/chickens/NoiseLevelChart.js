@@ -11,6 +11,8 @@ const DEFAULT_CAMERA_ID =
     process.env.NEXT_PUBLIC_GARDEN_CAMERA_ID || '677930230377fe03e4001fa9'
 const NOISE_BIN_SOURCE = 'gardenmate-noise-bin'
 const NVR_CLIP_LIVE_GUARD_MS = 15 * 1000
+const CLIP_PANEL_WIDTH_PX = 256
+const CLIP_PANEL_GUTTER_PX = 12
 
 /** Poll interval for live updates */
 const REFRESH_MS = 60 * 1000
@@ -78,6 +80,11 @@ function formatDayRange(start, end) {
     return `${fmt.format(start)} - ${fmt.format(end)}`
 }
 
+function clampNumber(value, min, max) {
+    if (max < min) return (min + max) / 2
+    return Math.min(max, Math.max(min, value))
+}
+
 /** UTC instant as `YYYY-MM-DDTHH:mm:ssZ` (matches binned API query examples). */
 function formatUtcISOZ(d) {
     const pad = (n) => String(n).padStart(2, '0')
@@ -97,8 +104,9 @@ function buildChickenAudioEventsUrl(start, end) {
     const q = new URLSearchParams({
         start: formatUtcISOZ(start),
         end: formatUtcISOZ(end),
-        source_device_identifier: NOISE_BIN_SOURCE,
-        limit: '1000',
+        noise_chart: 'true',
+        bin_minutes: String(BIN_MINUTES),
+        limit: '2000',
     })
     return `${CHICKEN_AUDIO_EVENTS_API}?${q.toString()}`
 }
@@ -118,8 +126,19 @@ function audioEventTimeMs(event) {
     return Number.isFinite(time) ? time : null
 }
 
+function audioEventBinRangeMs(event) {
+    const start = event?.bin_start ? new Date(event.bin_start).getTime() : NaN
+    const end = event?.bin_end ? new Date(event.bin_end).getTime() : NaN
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null
+    return { start, end }
+}
+
 function humanLabelColor(humanLabel) {
     return HUMAN_LABEL_COLORS[humanLabel] ?? null
+}
+
+function predictedLabelColor(predictedLabel) {
+    return predictedLabel === 'chicken' ? HUMAN_LABEL_COLORS.chicken : null
 }
 
 function clampClipRequestTime(d) {
@@ -507,6 +526,25 @@ export default function NoiseLevelChart({ variant = 'full' }) {
 
     const formatDbTick = (v) => `${d3.format('.1f')(v)} dB`
     const clampPlotX = (x) => Math.min(innerW, Math.max(0, x))
+    const eventMatchesPoint = (event, pointMs) => {
+        const binRange = audioEventBinRangeMs(event)
+        if (binRange) {
+            return pointMs >= binRange.start && pointMs < binRange.end
+        }
+
+        const eventMs = audioEventTimeMs(event)
+        return eventMs != null && Math.abs(eventMs - pointMs) <= REVIEW_MATCH_TOLERANCE_MS
+    }
+
+    const getAudioEventsForPoint = (point) => {
+        if (!point) return []
+
+        const pointMs = point.t.getTime()
+        if (!Number.isFinite(pointMs)) return []
+
+        return audioEvents.filter((event) => eventMatchesPoint(event, pointMs))
+    }
+
     const getAudioEventForPoint = (point) => {
         const key = point ? audioEventTimeKey(point.t) : null
         const exactEvent = key ? audioEventsByTimeKey[key] ?? null : null
@@ -538,11 +576,26 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     }
 
     const getBarFill = (point) => {
-        const humanLabel = getPointHumanLabel(point)
-        return humanLabelColor(humanLabel) ?? 'url(#noiseBarFill)'
+        const events = getAudioEventsForPoint(point)
+        if (events.some((event) => event.human_label === 'chicken')) return HUMAN_LABEL_COLORS.chicken
+        if (events.some((event) => event.human_label && event.human_label !== 'chicken')) {
+            return 'url(#noiseBarFill)'
+        }
+        if (events.some((event) => event.predicted_label === 'chicken')) return HUMAN_LABEL_COLORS.chicken
+
+        return 'url(#noiseBarFill)'
     }
 
-    const getBarOpacity = (point) => (getPointHumanLabel(point) ? 0.72 : 0.92)
+    const getBarOpacity = (point) => {
+        const events = getAudioEventsForPoint(point)
+        const hasHumanChicken = events.some((event) => event.human_label === 'chicken')
+        const hasHumanNonChicken = events.some(
+            (event) => event.human_label && event.human_label !== 'chicken'
+        )
+        const hasPredictedChicken = events.some((event) => event.predicted_label === 'chicken')
+
+        return hasHumanChicken || (!hasHumanNonChicken && hasPredictedChicken) ? 0.72 : 0.92
+    }
 
     const noiseScore = useMemo(() => {
         let chickenCount = 0
@@ -1283,10 +1336,23 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const selectedLabelSaving = selectedAudioEventKey && labelSavingKey === selectedAudioEventKey
 
     const clipPanelStyle = selectedPoint
-        ? {
-              left: `${((margin.left + xScale(selectedPoint.t)) / width) * 100}%`,
-              top: `${(Math.max(8, margin.top + yScale(selectedPoint.y) - 178) / height) * 100}%`,
-          }
+        ? (() => {
+              const panelWidth = Math.min(CLIP_PANEL_WIDTH_PX, width - CLIP_PANEL_GUTTER_PX * 2)
+              const panelHalfWidth = panelWidth / 2
+              const rawLeft = margin.left + xScale(selectedPoint.t)
+              const clampedLeft = clampNumber(
+                  rawLeft,
+                  panelHalfWidth + CLIP_PANEL_GUTTER_PX,
+                  width - panelHalfWidth - CLIP_PANEL_GUTTER_PX
+              )
+              const rawTop = margin.top + yScale(selectedPoint.y) - 178
+              const clampedTop = Math.max(CLIP_PANEL_GUTTER_PX, rawTop)
+
+              return {
+                  left: `${(clampedLeft / width) * 100}%`,
+                  top: `${(clampedTop / height) * 100}%`,
+              }
+          })()
         : null
 
     const hoverPoint = hoverIdx != null && series[hoverIdx] ? series[hoverIdx] : null
@@ -1382,7 +1448,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                 )}
                 {clipPanel && selectedPoint && clipPanelStyle && (
                     <div
-                        className="absolute z-20 w-64 -translate-x-1/2 rounded-lg border border-slate-600 bg-slate-950/95 p-3 text-left text-slate-100 shadow-2xl ring-1 ring-black/30"
+                        className="absolute z-20 w-64 max-w-[calc(100%-1.5rem)] -translate-x-1/2 rounded-lg border border-slate-600 bg-slate-950/95 p-3 text-left text-slate-100 shadow-2xl ring-1 ring-black/30"
                         style={clipPanelStyle}
                     >
                         <div className="mb-2 flex items-start justify-between gap-3">

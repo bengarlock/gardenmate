@@ -1,5 +1,6 @@
 import ChickenPageHeader from '@/app/chickens/ChickenPageHeader'
 import ChickenSubNav from '@/app/chickens/ChickenSubNav'
+import DangerousHeatAdvisory from '@/app/chickens/DangerousHeatAdvisory'
 import NoiseLevelChart from '@/app/chickens/NoiseLevelChart'
 
 const Chickens = () => {
@@ -10,6 +11,8 @@ const Chickens = () => {
                 <ChickenPageHeader title="Chickens" />
 
                 <ChickenSubNav />
+
+                <DangerousHeatAdvisory />
 
                 <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <NoiseLevelChart variant="tile" />
