@@ -18,11 +18,46 @@ function formatHumidity(value) {
     return `${Math.round(numeric)}%`
 }
 
-function temperatureTone(tempF) {
-    if (!Number.isFinite(tempF)) return 'text-slate-100'
-    if (tempF >= 90 || tempF <= 35) return 'text-red-300'
-    if (tempF >= 82 || tempF <= 45) return 'text-amber-300'
-    return 'text-emerald-300'
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value))
+}
+
+function interpolateColor(start, end, pct) {
+    const value = clamp(pct, 0, 1)
+    const rgb = start.map((channel, index) => Math.round(channel + (end[index] - channel) * value))
+    return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+}
+
+function temperatureColor(tempF) {
+    if (!Number.isFinite(tempF)) return 'rgb(186, 230, 253)'
+    const stops = [
+        { temp: 20, color: [59, 130, 246] },
+        { temp: 45, color: [34, 211, 238] },
+        { temp: 65, color: [52, 211, 153] },
+        { temp: 75, color: [250, 204, 21] },
+        { temp: 85, color: [251, 146, 60] },
+        { temp: 95, color: [239, 68, 68] },
+    ]
+    const boundedTemp = clamp(tempF, stops[0].temp, stops[stops.length - 1].temp)
+    for (let i = 0; i < stops.length - 1; i += 1) {
+        const current = stops[i]
+        const next = stops[i + 1]
+        if (boundedTemp >= current.temp && boundedTemp <= next.temp) {
+            return interpolateColor(
+                current.color,
+                next.color,
+                (boundedTemp - current.temp) / (next.temp - current.temp)
+            )
+        }
+    }
+    return 'rgb(239, 68, 68)'
+}
+
+function temperatureGradientStyle(tempF) {
+    const current = temperatureColor(tempF)
+    return {
+        backgroundImage: `linear-gradient(90deg, ${current}, rgb(254, 240, 138))`,
+    }
 }
 
 export default function CoopTemperatureTile() {
@@ -66,7 +101,7 @@ export default function CoopTemperatureTile() {
     const tempF = Number(reading?.temperature?.fahrenheit)
     const tempC = Number(reading?.temperature?.celsius)
     const humidity = Number(reading?.humidity?.percent)
-    const toneClass = temperatureTone(tempF)
+    const temperatureStyle = temperatureGradientStyle(tempF)
     const detailText = useMemo(() => {
         if (!fetchedAt) return 'Live Govee reading'
         return `Updated ${fetchedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
@@ -82,9 +117,19 @@ export default function CoopTemperatureTile() {
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                     Chicken coop now
                 </p>
-                <div className={`flex items-end gap-2 text-6xl font-semibold leading-none ${toneClass}`}>
-                    {loading && !reading ? '—' : formatTemperature(tempF)}
-                    <span className="pb-2 text-xl font-medium text-slate-400">°F</span>
+                <div className="flex items-end gap-2">
+                    <span
+                        className="bg-clip-text text-6xl font-semibold leading-none text-transparent"
+                        style={temperatureStyle}
+                    >
+                        {loading && !reading ? '—' : formatTemperature(tempF)}
+                    </span>
+                    <span
+                        className="bg-clip-text pb-2 text-xl font-medium text-transparent"
+                        style={temperatureStyle}
+                    >
+                        °F
+                    </span>
                 </div>
                 <p className="text-sm text-slate-400">
                     {Number.isFinite(tempC) ? `${tempC.toFixed(1)} °C` : 'Waiting for sensor data'}
