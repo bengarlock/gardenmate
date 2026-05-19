@@ -284,6 +284,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const [zoomDrag, setZoomDrag] = useState(null)
     const [rangeValidationError, setRangeValidationError] = useState(null)
     const [clipPanel, setClipPanel] = useState(null)
+    const [audioEventRows, setAudioEventRows] = useState([])
     const [audioEventsByTimeKey, setAudioEventsByTimeKey] = useState({})
     const [audioEventError, setAudioEventError] = useState(null)
     const [labelSavingKey, setLabelSavingKey] = useState(null)
@@ -429,6 +430,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
 
     useEffect(() => {
         if (series.length === 0) {
+            setAudioEventRows([])
             setAudioEventsByTimeKey({})
             return
         }
@@ -454,6 +456,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                     const key = audioEventTimeKey(event.recorded_at)
                     if (key) next[key] = event
                 })
+                setAudioEventRows(rows)
                 setAudioEventsByTimeKey(next)
                 setAudioEventError(null)
             })
@@ -469,8 +472,8 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     }, [series.length, xDomain])
 
     const audioEvents = useMemo(
-        () => Object.values(audioEventsByTimeKey).filter(Boolean),
-        [audioEventsByTimeKey]
+        () => audioEventRows.filter(Boolean),
+        [audioEventRows]
     )
 
     const xScale = useMemo(
@@ -632,14 +635,18 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         let chickenCount = 0
         let reviewedCount = 0
         let aiPredictionCount = 0
+        let chickenNoiseEventCount = 0
 
         series.forEach((point) => {
             const humanLabel = getPointHumanLabel(point)
+            const hasChickenLabel = humanLabel === 'chicken'
+            const hasAiChickenAlert = hasHighConfidencePredictionForPoint(point)
             if (humanLabel) {
                 reviewedCount += 1
-                if (humanLabel === 'chicken') chickenCount += 1
+                if (hasChickenLabel) chickenCount += 1
             }
-            if (hasHighConfidencePredictionForPoint(point)) aiPredictionCount += 1
+            if (hasAiChickenAlert) aiPredictionCount += 1
+            if (hasChickenLabel || hasAiChickenAlert) chickenNoiseEventCount += 1
         })
 
         return {
@@ -647,9 +654,10 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             chickenCount,
             reviewedCount,
             aiPredictionCount,
+            chickenNoiseEventCount,
             visibleCount: series.length,
         }
-    }, [series, audioEventsByTimeKey, audioEvents])
+    }, [series, audioEvents])
 
     const zoomSelection =
         zoomDrag && Math.abs(zoomDrag.currentX - zoomDrag.startX) >= MIN_ZOOM_DRAG_PX
@@ -1402,9 +1410,9 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const scoreMeterValue = Math.max(1, Math.min(10, noiseScore?.value ?? 1))
     const scoreMeterWidth = `${scoreMeterValue * 10}%`
     const scoreMeterBackgroundSize = `${1000 / scoreMeterValue}% 100%`
-    const scoreCardClass = `${
-        isTileVariant ? 'mt-3' : 'mb-3'
-    } grid gap-3 rounded-lg border border-slate-700/80 bg-slate-900/70 p-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center`
+    const scoreCardClass = isTileVariant
+        ? 'mt-3 grid gap-3 rounded-lg border border-slate-700/80 bg-slate-900/70 p-3 sm:grid-cols-2 sm:items-stretch'
+        : 'mb-3 grid gap-3 rounded-lg border border-slate-700/80 bg-slate-900/70 p-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center'
     const scoreValueClass = `${
         isTileVariant ? 'text-5xl' : 'text-4xl'
     } font-semibold leading-none ${scoreTone}`
@@ -1442,6 +1450,16 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                         }}
                     />
                 </div>
+                {isTileVariant && (
+                    <div className="border-t border-slate-700/70 pt-2 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            Chicken noise events today
+                        </p>
+                        <p className="mt-0.5 text-2xl font-semibold text-slate-100">
+                            {noiseScore ? noiseScore.chickenNoiseEventCount : '—'}
+                        </p>
+                    </div>
+                )}
             </div>
             {!isTileVariant && dayNavigationControls}
             {timeframeControls}

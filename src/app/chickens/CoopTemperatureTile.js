@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
 const COOP_TEMPERATURE_API = `${APP_BASE_PATH}/api/govee-thermometer`
+const WEATHER_PROXY_API = `${APP_BASE_PATH}/api/weather`
 const REFRESH_MS = 5 * 60 * 1000
 
 function formatTemperature(value) {
@@ -62,6 +63,7 @@ function temperatureGradientStyle(tempF) {
 
 export default function CoopTemperatureTile() {
     const [reading, setReading] = useState(null)
+    const [weather, setWeather] = useState(null)
     const [fetchedAt, setFetchedAt] = useState(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState('')
@@ -98,9 +100,37 @@ export default function CoopTemperatureTile() {
         }
     }, [])
 
+    useEffect(() => {
+        let cancelled = false
+
+        async function fetchWeather() {
+            try {
+                const response = await fetch(WEATHER_PROXY_API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    cache: 'no-store',
+                })
+                const data = await response.json().catch(() => null)
+                if (!response.ok) throw new Error(data?.message || `HTTP ${response.status}`)
+                if (!cancelled) setWeather(data?.obs?.[0] ?? null)
+            } catch (_err) {
+                if (!cancelled) setWeather(null)
+            }
+        }
+
+        fetchWeather()
+        const interval = window.setInterval(fetchWeather, REFRESH_MS)
+        return () => {
+            cancelled = true
+            window.clearInterval(interval)
+        }
+    }, [])
+
     const tempF = Number(reading?.temperature?.fahrenheit)
     const tempC = Number(reading?.temperature?.celsius)
     const humidity = Number(reading?.humidity?.percent)
+    const outsideTempF = Number(weather?.air_temperature) * 9 / 5 + 32
+    const outsideHumidity = Number(weather?.relative_humidity)
     const temperatureStyle = temperatureGradientStyle(tempF)
     const detailText = useMemo(() => {
         if (!fetchedAt) return 'Live Govee reading'
@@ -113,11 +143,11 @@ export default function CoopTemperatureTile() {
                 Coop Temperature
             </h2>
 
-            <div className="mt-3 grid gap-3 rounded-lg border border-slate-700/80 bg-slate-900/70 p-3">
+            <div className="mt-3 grid gap-3 rounded-lg border border-slate-700/80 bg-slate-900/70 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                     Chicken coop now
                 </p>
-                <div className="flex items-end gap-2">
+                <div className="flex items-end gap-2 sm:col-start-1">
                     <span
                         className="bg-clip-text text-6xl font-semibold leading-none text-transparent"
                         style={temperatureStyle}
@@ -131,12 +161,19 @@ export default function CoopTemperatureTile() {
                         °F
                     </span>
                 </div>
-                <p className="text-sm text-slate-400">
+                <p className="text-sm text-slate-400 sm:col-start-1">
                     {Number.isFinite(tempC) ? `${tempC.toFixed(1)} °C` : 'Waiting for sensor data'}
                 </p>
+                {Number.isFinite(outsideTempF) && (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-slate-700/70 pt-2 text-xs text-slate-400 sm:col-start-2 sm:row-span-3 sm:row-start-1 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                        <span className="font-semibold uppercase tracking-wide text-sky-300/80">Outside</span>
+                        <span>{formatTemperature(outsideTempF)} °F</span>
+                        {Number.isFinite(outsideHumidity) && <span>{formatHumidity(outsideHumidity)}</span>}
+                    </div>
+                )}
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border border-slate-800/90 bg-slate-950/45 p-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                         Humidity
