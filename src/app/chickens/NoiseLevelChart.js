@@ -23,13 +23,15 @@ const BIN_MS = BIN_MINUTES * 60 * 1000
 const REVIEW_MATCH_TOLERANCE_MS = BIN_MS / 2 + 1000
 
 /** Bar fill gradient: quiet (low dB / more negative) → loud */
-const LEVEL_COLORS = ['#22c55e', '#eab308', '#ef4444', '#a855f7']
+const LEVEL_COLORS = ['#22c55e', '#eab308', '#f97316', '#a855f7']
 const HUMAN_LABEL_COLORS = {
     chicken: '#ef4444',
     not_chicken: '#64748b',
     unsure: '#64748b',
     ignored: '#64748b',
 }
+const AI_CHICKEN_STROKE = '#f59e0b'
+const MIN_PREDICTED_CHICKEN_CONFIDENCE = 0.9
 
 /** Fixed RMS chart bounds in dB. */
 const Y_DOMAIN = [-60, -10]
@@ -137,8 +139,14 @@ function humanLabelColor(humanLabel) {
     return HUMAN_LABEL_COLORS[humanLabel] ?? null
 }
 
-function predictedLabelColor(predictedLabel) {
-    return predictedLabel === 'chicken' ? HUMAN_LABEL_COLORS.chicken : null
+function predictionConfidence(event) {
+    const confidence = Number(event?.predicted_confidence)
+    return Number.isFinite(confidence) ? confidence : null
+}
+
+function isHighConfidencePredictedChicken(event) {
+    const confidence = predictionConfidence(event)
+    return event?.predicted_label === 'chicken' && confidence != null && confidence >= MIN_PREDICTED_CHICKEN_CONFIDENCE
 }
 
 function clampClipRequestTime(d) {
@@ -578,40 +586,67 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const getBarFill = (point) => {
         const events = getAudioEventsForPoint(point)
         if (events.some((event) => event.human_label === 'chicken')) return HUMAN_LABEL_COLORS.chicken
-        if (events.some((event) => event.human_label && event.human_label !== 'chicken')) {
-            return 'url(#noiseBarFill)'
-        }
-        if (events.some((event) => event.predicted_label === 'chicken')) return HUMAN_LABEL_COLORS.chicken
 
         return 'url(#noiseBarFill)'
     }
 
     const getBarOpacity = (point) => {
         const events = getAudioEventsForPoint(point)
-        const hasHumanChicken = events.some((event) => event.human_label === 'chicken')
-        const hasHumanNonChicken = events.some(
+        return events.some((event) => event.human_label === 'chicken') ? 0.78 : 0.92
+    }
+
+    const hasReviewedNonChickenForPoint = (point) =>
+        getAudioEventsForPoint(point).some(
             (event) => event.human_label && event.human_label !== 'chicken'
         )
-        const hasPredictedChicken = events.some((event) => event.predicted_label === 'chicken')
 
-        return hasHumanChicken || (!hasHumanNonChicken && hasPredictedChicken) ? 0.72 : 0.92
+    const hasHighConfidencePredictionForPoint = (point) =>
+        !hasReviewedNonChickenForPoint(point) &&
+        getAudioEventsForPoint(point).some(isHighConfidencePredictedChicken)
+
+    const getBestPredictionForPoint = (point) =>
+        getAudioEventsForPoint(point)
+            .filter(isHighConfidencePredictedChicken)
+            .sort((a, b) => (predictionConfidence(b) ?? 0) - (predictionConfidence(a) ?? 0))[0] ?? null
+
+    const getBarStroke = (point, index) => {
+        if (clipPanel?.idx === index) return '#f59e0b'
+        if (hoverIdx === index) return '#f8fafc'
+        if (hasHighConfidencePredictionForPoint(point)) return AI_CHICKEN_STROKE
+        return '#0f172a'
     }
+
+    const getBarStrokeWidth = (point, index) =>
+        clipPanel?.idx === index
+            ? 2
+            : hoverIdx === index
+              ? 1.5
+              : hasHighConfidencePredictionForPoint(point)
+                ? 1.5
+                : 0.5
+
+    const getBarStrokeOpacity = (point, index) =>
+        clipPanel?.idx === index || hoverIdx === index || hasHighConfidencePredictionForPoint(point) ? 1 : 0.35
 
     const noiseScore = useMemo(() => {
         let chickenCount = 0
         let reviewedCount = 0
+        let aiPredictionCount = 0
 
         series.forEach((point) => {
             const humanLabel = getPointHumanLabel(point)
-            if (!humanLabel) return
-            reviewedCount += 1
-            if (humanLabel === 'chicken') chickenCount += 1
+            if (humanLabel) {
+                reviewedCount += 1
+                if (humanLabel === 'chicken') chickenCount += 1
+            }
+            if (hasHighConfidencePredictionForPoint(point)) aiPredictionCount += 1
         })
 
         return {
             value: Math.min(10, 1 + Math.min(CHICKEN_EVENTS_FOR_MAX_SCORE, chickenCount)),
             chickenCount,
             reviewedCount,
+            aiPredictionCount,
             visibleCount: series.length,
         }
     }, [series, audioEventsByTimeKey, audioEvents])
@@ -1333,6 +1368,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const selectedAudioEvent = selectedPoint ? getAudioEventForPoint(selectedPoint) : null
     const selectedAudioEventKey = selectedPoint ? audioEventTimeKey(selectedPoint.t) : null
     const selectedHumanLabel = selectedAudioEvent?.human_label ?? null
+    const selectedPrediction = selectedPoint ? getBestPredictionForPoint(selectedPoint) : null
     const selectedLabelSaving = selectedAudioEventKey && labelSavingKey === selectedAudioEventKey
 
     const clipPanelStyle = selectedPoint
@@ -1356,6 +1392,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         : null
 
     const hoverPoint = hoverIdx != null && series[hoverIdx] ? series[hoverIdx] : null
+    const hoverPrediction = hoverPoint ? getBestPredictionForPoint(hoverPoint) : null
     const scoreTone =
         noiseScore?.value >= 8
             ? 'text-red-300'
@@ -1427,6 +1464,11 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                             {getAudioEventForPoint(hoverPoint).human_label.replace('_', ' ')}
                         </p>
                     )}
+                    {!getAudioEventForPoint(hoverPoint)?.human_label && hoverPrediction && (
+                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                            AI chicken {Math.round((predictionConfidence(hoverPrediction) ?? 0) * 100)}%
+                        </p>
+                    )}
                 </div>
             )}
             {error && payload && (
@@ -1490,6 +1532,11 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                                 preload="metadata"
                                 className="aspect-video w-full rounded-md bg-black"
                             />
+                        )}
+                        {!selectedHumanLabel && selectedPrediction && (
+                            <p className="mt-2 rounded-md border border-amber-300/25 bg-amber-950/40 px-2 py-1 text-xs text-amber-100">
+                                AI suggests chicken at {Math.round((predictionConfidence(selectedPrediction) ?? 0) * 100)}% confidence.
+                            </p>
                         )}
                         <div className="mt-3 border-t border-slate-800 pt-3">
                             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -1582,19 +1629,9 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                                     fill={getBarFill(d)}
                                     rx={2}
                                     opacity={getBarOpacity(d)}
-                                    stroke={
-                                        clipPanel?.idx === i
-                                            ? '#f59e0b'
-                                            : hoverIdx === i
-                                              ? '#f8fafc'
-                                              : '#0f172a'
-                                    }
-                                    strokeWidth={
-                                        clipPanel?.idx === i ? 2 : hoverIdx === i ? 1.5 : 0.5
-                                    }
-                                    strokeOpacity={
-                                        clipPanel?.idx === i || hoverIdx === i ? 1 : 0.35
-                                    }
+                                    stroke={getBarStroke(d, i)}
+                                    strokeWidth={getBarStrokeWidth(d, i)}
+                                    strokeOpacity={getBarStrokeOpacity(d, i)}
                                 />
                             )
                         })}
@@ -1687,7 +1724,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                         )}
                     </g>
                 </svg>
-                <div className="mx-auto mt-2 grid max-w-md grid-cols-3 gap-2 border-t border-slate-700/70 pt-3 text-center text-xs text-slate-300">
+                <div className="mx-auto mt-2 grid max-w-lg grid-cols-4 gap-2 border-t border-slate-700/70 pt-3 text-center text-xs text-slate-300">
                     <div>
                         <span className="block text-[10px] uppercase tracking-wide text-slate-500">
                             Chicken
@@ -1702,12 +1739,18 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                     </div>
                     <div>
                         <span className="block text-[10px] uppercase tracking-wide text-slate-500">
+                            AI alerts
+                        </span>
+                        {noiseScore.aiPredictionCount}
+                    </div>
+                    <div>
+                        <span className="block text-[10px] uppercase tracking-wide text-slate-500">
                             Visible
                         </span>
                         {noiseScore.visibleCount}
                     </div>
-                    <p className="col-span-3 text-[11px] text-slate-500">
-                        Score is based on confirmed chicken labels in the bars currently shown.
+                    <p className="col-span-4 text-[11px] text-slate-500">
+                        Score is based on confirmed chicken labels. AI alerts require 90% confidence.
                     </p>
                 </div>
             </div>}
