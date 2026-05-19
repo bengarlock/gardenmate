@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 
-const eyebrowClass = 'text-sm font-semibold uppercase tracking-wide text-emerald-300 transition hover:text-emerald-100'
+const eyebrowClass = 'text-sm font-semibold uppercase tracking-wide text-amber-200 transition hover:text-stone-100'
 
 export default function ChickenPageHeader({ title, eyebrow = 'Garden dashboard', eyebrowHref }) {
     return (
