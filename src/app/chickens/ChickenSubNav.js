@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 const links = [
     { href: '/chickens', label: 'Home' },
     { href: '/chickens/noise', label: 'Noise Management' },
+    { href: '/chickens/resources', label: 'Resources' },
 ]
 
 export default function ChickenSubNav() {
