@@ -79,6 +79,8 @@ export default function ChickenResourcesPage() {
     const [showCreateForm, setShowCreateForm] = useState(false)
     const [editingItemId, setEditingItemId] = useState(null)
     const [resetCandidate, setResetCandidate] = useState(null)
+    const [resettingItemId, setResettingItemId] = useState(null)
+    const [refillingItemIds, setRefillingItemIds] = useState([])
     const [loading, setLoading] = useState(true)
     const [saving, setSaving] = useState(false)
     const [error, setError] = useState('')
@@ -189,18 +191,27 @@ export default function ChickenResourcesPage() {
 
     async function resetItem(item) {
         setError('')
-        const response = await fetch(`${TRACKER_API}/${item.id}/reset`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-        })
-        const data = await response.json()
-        if (!response.ok) {
-            setError(data.message || 'Could not reset resource.')
-            return
+        setResettingItemId(item.id)
+        try {
+            const response = await fetch(`${TRACKER_API}/${item.id}/reset`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            })
+            const data = await response.json()
+            if (!response.ok) {
+                setError(data.message || 'Could not reset resource.')
+                return
+            }
+            setResetCandidate(null)
+            setRefillingItemIds((current) => [...new Set([...current, item.id])])
+            setItems((current) => current.map((entry) => (entry.id === item.id ? data : entry)))
+            window.setTimeout(() => {
+                setRefillingItemIds((current) => current.filter((id) => id !== item.id))
+            }, 1200)
+        } finally {
+            setResettingItemId(null)
         }
-        setItems((current) => current.map((entry) => (entry.id === item.id ? data : entry)))
-        setResetCandidate(null)
     }
 
     async function archiveItem(item) {
@@ -385,6 +396,7 @@ export default function ChickenResourcesPage() {
                                 {sortedItems.map((item) => {
                                     const percent = item.percent_remaining ?? 0
                                     const accentColor = itemColor(item)
+                                    const isRefilling = refillingItemIds.includes(item.id)
                                     const daysRemaining = item.days_remaining === null || item.days_remaining === undefined
                                         ? null
                                         : Number(item.days_remaining)
@@ -565,7 +577,9 @@ export default function ChickenResourcesPage() {
                                             <div className="mt-4 grid gap-2">
                                                 <div className="h-3 overflow-hidden rounded-full bg-stone-800">
                                                     <div
-                                                        className="h-full"
+                                                        className={`h-full rounded-full transition-[width] duration-1000 ease-out ${
+                                                            isRefilling ? 'animate-pulse shadow-[0_0_18px_rgba(255,255,255,0.22)]' : ''
+                                                        }`}
                                                         style={{
                                                             width: `${Math.max(0, Math.min(100, percent))}%`,
                                                             backgroundColor: accentColor,
@@ -610,9 +624,10 @@ export default function ChickenResourcesPage() {
                             <button
                                 type="button"
                                 onClick={() => resetItem(resetCandidate)}
+                                disabled={resettingItemId === resetCandidate.id}
                                 className="min-h-10 rounded-md bg-stone-100 px-4 text-sm font-bold text-stone-950 transition hover:bg-white"
                             >
-                                Reset
+                                {resettingItemId === resetCandidate.id ? 'Resetting' : 'Reset'}
                             </button>
                         </div>
                     </section>
