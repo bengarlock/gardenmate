@@ -274,6 +274,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const [error, setError] = useState(null)
     const [hoverIdx, setHoverIdx] = useState(null)
     const [timeframe, setTimeframe] = useState('day')
+    const [eventFilter, setEventFilter] = useState('all')
     const [selectedDay, setSelectedDay] = useState(() => dayStartLocal(new Date()))
     const [rangeApplied, setRangeApplied] = useState(null)
     const [rangeDraft, setRangeDraft] = useState({ start: null, end: null })
@@ -598,6 +599,12 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         return events.some((event) => event.human_label === 'chicken') ? 0.78 : 0.92
     }
 
+    const hasHumanChickenForPoint = (point) =>
+        getAudioEventsForPoint(point).some((event) => event.human_label === 'chicken')
+
+    const hasHumanReviewForPoint = (point) =>
+        getAudioEventsForPoint(point).some((event) => Boolean(event.human_label))
+
     const hasReviewedNonChickenForPoint = (point) =>
         getAudioEventsForPoint(point).some(
             (event) => event.human_label && event.human_label !== 'chicken'
@@ -631,6 +638,13 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const getBarStrokeOpacity = (point, index) =>
         clipPanel?.idx === index || hoverIdx === index || hasHighConfidencePredictionForPoint(point) ? 1 : 0.35
 
+    const visibleSeries = useMemo(() => {
+        if (eventFilter !== 'detected') return series
+        return series.filter((point) => {
+            return hasHumanChickenForPoint(point) || hasHighConfidencePredictionForPoint(point)
+        })
+    }, [eventFilter, series, audioEvents])
+
     const noiseScore = useMemo(() => {
         let chickenCount = 0
         let reviewedCount = 0
@@ -638,10 +652,9 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         let chickenNoiseEventCount = 0
 
         series.forEach((point) => {
-            const humanLabel = getPointHumanLabel(point)
-            const hasChickenLabel = humanLabel === 'chicken'
+            const hasChickenLabel = hasHumanChickenForPoint(point)
             const hasAiChickenAlert = hasHighConfidencePredictionForPoint(point)
-            if (humanLabel) {
+            if (hasHumanReviewForPoint(point)) {
                 reviewedCount += 1
                 if (hasChickenLabel) chickenCount += 1
             }
@@ -655,9 +668,9 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             reviewedCount,
             aiPredictionCount,
             chickenNoiseEventCount,
-            visibleCount: series.length,
+            visibleCount: visibleSeries.length,
         }
-    }, [series, audioEvents])
+    }, [series, visibleSeries.length, audioEvents])
 
     const zoomSelection =
         zoomDrag && Math.abs(zoomDrag.currentX - zoomDrag.startX) >= MIN_ZOOM_DRAG_PX
@@ -671,7 +684,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             : null
 
     const handlePlotMouseMove = (e) => {
-        if (series.length === 0) return
+        if (visibleSeries.length === 0) return
         const [innerX, innerY] = d3.pointer(e, e.currentTarget)
         if (zoomDrag) {
             setZoomDrag((current) =>
@@ -691,8 +704,8 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         }
         let best = 0
         let bestDx = Infinity
-        for (let i = 0; i < series.length; i++) {
-            const dx = Math.abs(xScale(series[i].t) - innerX)
+        for (let i = 0; i < visibleSeries.length; i++) {
+            const dx = Math.abs(xScale(visibleSeries[i].t) - innerX)
             if (dx < bestDx) {
                 bestDx = dx
                 best = i
@@ -706,14 +719,14 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     }
 
     const getNearestSeriesIndex = (innerX, innerY) => {
-        if (series.length === 0 || innerX < 0 || innerX > innerW || innerY < 0 || innerY > innerH) {
+        if (visibleSeries.length === 0 || innerX < 0 || innerX > innerW || innerY < 0 || innerY > innerH) {
             return null
         }
 
         let best = 0
         let bestDx = Infinity
-        for (let i = 0; i < series.length; i++) {
-            const dx = Math.abs(xScale(series[i].t) - innerX)
+        for (let i = 0; i < visibleSeries.length; i++) {
+            const dx = Math.abs(xScale(visibleSeries[i].t) - innerX)
             if (dx < bestDx) {
                 bestDx = dx
                 best = i
@@ -726,11 +739,11 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         if (!point) return -1
         const pointMs = point.t.getTime()
         if (!Number.isFinite(pointMs)) return -1
-        return series.findIndex((candidate) => candidate.t.getTime() === pointMs)
+        return visibleSeries.findIndex((candidate) => candidate.t.getTime() === pointMs)
     }
 
     const requestClipForBar = (idx) => {
-        const point = series[idx]
+        const point = visibleSeries[idx]
         if (!point) return
 
         if (clipRequestRef.current) {
@@ -815,7 +828,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
 
     const handlePlotPointerDown = (e) => {
         if (isTileVariant) return
-        if (e.button !== 0 || series.length === 0) return
+        if (e.button !== 0 || visibleSeries.length === 0) return
         const [innerX, innerY] = d3.pointer(e, e.currentTarget)
         if (innerX < 0 || innerX > innerW || innerY < 0 || innerY > innerH) return
         e.currentTarget.setPointerCapture?.(e.pointerId)
@@ -965,6 +978,11 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             }
 
             const eventKey = audioEventTimeKey(updated.recorded_at) ?? pointKey
+            setAudioEventRows((current) => {
+                const existingIndex = current.findIndex((event) => event.id === updated.id)
+                if (existingIndex === -1) return [...current, updated]
+                return current.map((event, index) => (index === existingIndex ? updated : event))
+            })
             setAudioEventsByTimeKey((current) => ({
                 ...current,
                 [eventKey]: updated,
@@ -972,7 +990,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
 
             const currentIdx = getSeriesIndexForPoint(point)
             const nextIdx = currentIdx + 1
-            if (currentIdx >= 0 && nextIdx < series.length) {
+            if (currentIdx >= 0 && nextIdx < visibleSeries.length) {
                 requestClipForBar(nextIdx)
             }
         } catch (e) {
@@ -1044,6 +1062,11 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         setViewHistory([])
         setSelectedDay(dayStartLocal(new Date()))
         setTimeframe('day')
+    }
+
+    const handleEventFilterChange = (nextFilter) => {
+        resetChartSelection()
+        setEventFilter(nextFilter)
     }
 
     const openRangePicker = () => {
@@ -1165,6 +1188,38 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             >
                 Now
             </button>
+        </div>
+    )
+
+    const eventFilterControls = isTileVariant ? null : (
+        <div
+            className="mb-4 flex justify-center"
+            role="group"
+            aria-label="Noise event filter"
+        >
+            <div className="grid w-full max-w-md grid-cols-2 overflow-hidden rounded-lg border border-slate-700/80 bg-slate-900/60">
+                {[
+                    ['all', 'All noise'],
+                    ['detected', 'Detected chicken'],
+                ].map(([value, label]) => {
+                    const selected = eventFilter === value
+                    return (
+                        <button
+                            key={value}
+                            type="button"
+                            onClick={() => handleEventFilterChange(value)}
+                            aria-pressed={selected}
+                            className={`px-3 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 ${
+                                selected
+                                    ? 'bg-emerald-400 text-slate-950'
+                                    : 'text-slate-200 hover:bg-slate-800'
+                            }`}
+                        >
+                            {label}
+                        </button>
+                    )
+                })}
+            </div>
         </div>
     )
 
@@ -1372,7 +1427,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     }
 
     const selectedPoint =
-        clipPanel && series[clipPanel.idx] ? series[clipPanel.idx] : null
+        clipPanel && visibleSeries[clipPanel.idx] ? visibleSeries[clipPanel.idx] : null
     const selectedAudioEvent = selectedPoint ? getAudioEventForPoint(selectedPoint) : null
     const selectedAudioEventKey = selectedPoint ? audioEventTimeKey(selectedPoint.t) : null
     const selectedHumanLabel = selectedAudioEvent?.human_label ?? null
@@ -1399,7 +1454,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
           })()
         : null
 
-    const hoverPoint = hoverIdx != null && series[hoverIdx] ? series[hoverIdx] : null
+    const hoverPoint = hoverIdx != null && visibleSeries[hoverIdx] ? visibleSeries[hoverIdx] : null
     const hoverPrediction = hoverPoint ? getBestPredictionForPoint(hoverPoint) : null
     const scoreTone =
         noiseScore?.value >= 8
@@ -1463,6 +1518,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             </div>
             {!isTileVariant && dayNavigationControls}
             {timeframeControls}
+            {eventFilterControls}
             {rangePicker}
             {hoverPoint && (
                 <div className={tooltipClass}>
@@ -1632,7 +1688,19 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                                 strokeOpacity={0.85}
                             />
                         ))}
-                        {series.map((d, i) => {
+                        {eventFilter === 'detected' && visibleSeries.length === 0 && (
+                            <text
+                                x={innerW / 2}
+                                y={innerH / 2}
+                                textAnchor="middle"
+                                fill="#94a3b8"
+                                fontSize={13}
+                                fontWeight={600}
+                            >
+                                No detected chicken events in this view
+                            </text>
+                        )}
+                        {visibleSeries.map((d, i) => {
                             const cx = xScale(d.t)
                             const x = cx - barWidthPx / 2
                             const yTop = yScale(d.y)
@@ -1653,11 +1721,11 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                                 />
                             )
                         })}
-                        {hoverIdx != null && series[hoverIdx] && (
+                        {hoverIdx != null && visibleSeries[hoverIdx] && (
                             <g pointerEvents="none">
                                 <line
-                                    x1={xScale(series[hoverIdx].t)}
-                                    x2={xScale(series[hoverIdx].t)}
+                                    x1={xScale(visibleSeries[hoverIdx].t)}
+                                    x2={xScale(visibleSeries[hoverIdx].t)}
                                     y1={0}
                                     y2={innerH}
                                     stroke="#94a3b8"
