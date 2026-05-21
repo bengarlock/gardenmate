@@ -291,13 +291,12 @@ export default function WaterUsageChart() {
 
 
     const rangePicker = rangePickerOpen ? (
-        <div className="mt-3 flex justify-center">
-            <div className="w-full max-w-md rounded-lg border border-sky-700/80 bg-blue-950 p-4 shadow-2xl ring-1 ring-sky-300/20">
-            <div className="mb-3 grid grid-cols-[2rem_1fr_2rem] items-center gap-3">
+        <div className="absolute left-1/2 top-32 z-30 w-[min(20rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-sky-700/80 bg-blue-950 p-3 shadow-2xl ring-1 ring-sky-300/20">
+            <div className="mb-2 grid grid-cols-[1.75rem_1fr_1.75rem] items-center gap-2">
                 <button
                     type="button"
                     onClick={() => setCalendarMonth((current) => addLocalMonths(current, -1))}
-                    className="flex h-8 w-8 items-center justify-center rounded-md bg-sky-900/80 text-lg leading-none text-sky-100 transition-colors hover:bg-sky-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                    className="flex h-7 w-7 items-center justify-center rounded-md bg-sky-900/80 text-lg leading-none text-sky-100 transition-colors hover:bg-sky-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
                     aria-label="Previous month"
                     title="Previous month"
                 >
@@ -309,19 +308,19 @@ export default function WaterUsageChart() {
                 <button
                     type="button"
                     onClick={() => setCalendarMonth((current) => addLocalMonths(current, 1))}
-                    className="flex h-8 w-8 items-center justify-center rounded-md bg-sky-900/80 text-lg leading-none text-sky-100 transition-colors hover:bg-sky-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                    className="flex h-7 w-7 items-center justify-center rounded-md bg-sky-900/80 text-lg leading-none text-sky-100 transition-colors hover:bg-sky-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
                     aria-label="Next month"
                     title="Next month"
                 >
                     ›
                 </button>
             </div>
-            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase text-sky-300/70">
+            <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-semibold uppercase text-sky-300/70">
                 {WEEKDAY_LABELS.map((label) => (
                     <div key={label}>{label}</div>
                 ))}
             </div>
-            <div className="mt-1 grid grid-cols-7 gap-1">
+            <div className="mt-1 grid grid-cols-7 gap-0.5">
                 {calendarCells.map((day) => {
                     const inCurrentMonth = day.getMonth() === calendarMonth.getMonth()
                     const isStart = rangeDraft.start && isSameLocalDay(day, rangeDraft.start)
@@ -346,7 +345,7 @@ export default function WaterUsageChart() {
                             key={day.toISOString()}
                             type="button"
                             onClick={() => handleCalendarDateClick(day)}
-                            className={`relative flex h-10 items-center justify-center rounded-md text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                            className={`relative flex h-7 items-center justify-center rounded-md text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
                                 inCurrentMonth ? selectedClass : `opacity-45 ${selectedClass}`
                             }`}
                             aria-pressed={Boolean(isStart || isEnd || isInRange)}
@@ -363,31 +362,30 @@ export default function WaterUsageChart() {
                 })}
             </div>
             {rangeDraft.start && rangeDraft.end && (
-                <div className="mt-3 text-center text-sm font-medium text-cyan-100">
+                <div className="mt-2 text-center text-xs font-medium text-cyan-100">
                     {formatDayRange(rangeDraft.start, rangeDraft.end)}
                 </div>
             )}
             {rangeValidationError && (
-                <p className="mt-3 text-center text-sm text-red-200" role="alert">
+                <p className="mt-2 text-center text-xs text-red-200" role="alert">
                     {rangeValidationError}
                 </p>
             )}
-            <div className="mt-3 flex justify-center gap-2">
+            <div className="mt-2 flex justify-center gap-2">
                 <button
                     type="button"
                     onClick={() => setRangePickerOpen(false)}
-                    className="rounded-lg bg-sky-900/80 px-4 py-2 text-sm font-medium text-sky-100 transition-colors hover:bg-sky-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                    className="rounded-md bg-sky-900/80 px-3 py-1.5 text-xs font-medium text-sky-100 transition-colors hover:bg-sky-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
                 >
                     Cancel
                 </button>
                 <button
                     type="button"
                     onClick={handleApplyRange}
-                    className="rounded-lg bg-cyan-300 px-4 py-2 text-sm font-semibold text-blue-950 shadow-sm transition-colors hover:bg-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                    className="rounded-md bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-blue-950 shadow-sm transition-colors hover:bg-cyan-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
                 >
                     Apply range
                 </button>
-            </div>
             </div>
         </div>
     ) : null
