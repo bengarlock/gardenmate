@@ -291,7 +291,8 @@ export default function WaterUsageChart() {
 
 
     const rangePicker = rangePickerOpen ? (
-        <div className="absolute left-1/2 top-28 z-30 w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-sky-700/80 bg-blue-950/95 p-3 shadow-2xl ring-1 ring-sky-300/20">
+        <div className="mt-3 flex justify-center">
+            <div className="w-full max-w-md rounded-lg border border-sky-700/80 bg-blue-950 p-4 shadow-2xl ring-1 ring-sky-300/20">
             <div className="mb-3 grid grid-cols-[2rem_1fr_2rem] items-center gap-3">
                 <button
                     type="button"
@@ -345,7 +346,7 @@ export default function WaterUsageChart() {
                             key={day.toISOString()}
                             type="button"
                             onClick={() => handleCalendarDateClick(day)}
-                            className={`relative flex aspect-square min-h-9 items-center justify-center rounded-md text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
+                            className={`relative flex h-10 items-center justify-center rounded-md text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${
                                 inCurrentMonth ? selectedClass : `opacity-45 ${selectedClass}`
                             }`}
                             aria-pressed={Boolean(isStart || isEnd || isInRange)}
@@ -386,6 +387,7 @@ export default function WaterUsageChart() {
                 >
                     Apply range
                 </button>
+            </div>
             </div>
         </div>
     ) : null
