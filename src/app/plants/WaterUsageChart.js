@@ -5,7 +5,7 @@ import {useEffect, useMemo, useRef, useState} from 'react'
 
 const WATER_USAGE_API = 'https://bengarlock.com/api/v1/garden/water/water-usage/'
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const WATER_COST_PER_GALLON = 0.59
+const WATER_COST_PER_GALLON = 0.0059
 const CURRENCY_FORMAT = new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency: 'USD',
