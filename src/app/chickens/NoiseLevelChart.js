@@ -7,6 +7,8 @@ const NOISE_API = 'https://bengarlock.com/api/v1/garden/noise/'
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
 const NVR_CLIPS_API = `${APP_BASE_PATH}/api/nvr-clips`
 const CHICKEN_AUDIO_EVENTS_API = `${APP_BASE_PATH}/api/chicken-audio-events`
+const CHICKEN_AUDIO_SUMMARY_API = `${CHICKEN_AUDIO_EVENTS_API}/summary`
+const CHICKEN_AUDIO_RETRAIN_API = `${CHICKEN_AUDIO_EVENTS_API}/retrain`
 const DEFAULT_CAMERA_ID =
     process.env.NEXT_PUBLIC_GARDEN_CAMERA_ID || '677930230377fe03e4001fa9'
 const NOISE_BIN_SOURCE = 'gardenmate-noise-bin'
@@ -289,6 +291,10 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const [audioEventsByTimeKey, setAudioEventsByTimeKey] = useState({})
     const [audioEventError, setAudioEventError] = useState(null)
     const [labelSavingKey, setLabelSavingKey] = useState(null)
+    const [audioSummary, setAudioSummary] = useState(null)
+    const [audioSummaryLoading, setAudioSummaryLoading] = useState(false)
+    const [audioSummaryError, setAudioSummaryError] = useState(null)
+    const [retrainState, setRetrainState] = useState({ status: 'idle', message: '' })
     const firstFetchEverRef = useRef(true)
     const clipRequestRef = useRef(null)
     const suppressNextClickRef = useRef(false)
@@ -309,6 +315,38 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             // Some browsers block autoplay with sound; the controls remain visible.
         })
     }, [clipPanel?.status, clipPanel?.clipUrl])
+
+    useEffect(() => {
+        if (isTileVariant) return undefined
+        let cancelled = false
+
+        async function fetchAudioSummary() {
+            setAudioSummaryLoading(true)
+            try {
+                const response = await fetch(CHICKEN_AUDIO_SUMMARY_API, {
+                    headers: { Accept: 'application/json' },
+                    cache: 'no-store',
+                })
+                const json = await response.json().catch(() => ({}))
+                if (!response.ok) {
+                    throw new Error(json.message || `HTTP ${response.status}`)
+                }
+                if (!cancelled) {
+                    setAudioSummary(json)
+                    setAudioSummaryError(null)
+                }
+            } catch (e) {
+                if (!cancelled) setAudioSummaryError(e.message ?? String(e))
+            } finally {
+                if (!cancelled) setAudioSummaryLoading(false)
+            }
+        }
+
+        fetchAudioSummary()
+        return () => {
+            cancelled = true
+        }
+    }, [isTileVariant])
 
     useEffect(() => {
         let cancelled = false
@@ -1069,6 +1107,32 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         setEventFilter(nextFilter)
     }
 
+    const handleRetrainModel = async () => {
+        if (retrainState.status === 'running') return
+
+        setRetrainState({ status: 'running', message: 'Queuing retrain...' })
+        try {
+            const response = await fetch(CHICKEN_AUDIO_RETRAIN_API, {
+                method: 'POST',
+                headers: { Accept: 'application/json' },
+                cache: 'no-store',
+            })
+            const json = await response.json().catch(() => ({}))
+            if (!response.ok) {
+                throw new Error(json.message || `HTTP ${response.status}`)
+            }
+            setRetrainState({
+                status: 'queued',
+                message: json.task_id ? `Retrain queued (${json.task_id}).` : 'Retrain queued.',
+            })
+        } catch (e) {
+            setRetrainState({
+                status: 'error',
+                message: e.message ?? String(e),
+            })
+        }
+    }
+
     const openRangePicker = () => {
         if (rangePickerOpen) {
             setRangePickerOpen(false)
@@ -1477,6 +1541,12 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const svgClass = `block h-auto w-full ${
         isTileVariant ? 'overflow-hidden rounded-md bg-slate-950/25' : 'overflow-visible'
     }`
+    const audioClipCount = Number(audioSummary?.audio_clip_count ?? audioSummary?.total)
+    const audioClipText = audioSummaryLoading && !audioSummary
+        ? 'Loading...'
+        : Number.isFinite(audioClipCount)
+          ? audioClipCount.toLocaleString()
+          : '-'
 
     return (
         <div className={containerClass}>
@@ -1516,6 +1586,38 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                     </div>
                 )}
             </div>
+            {!isTileVariant && (
+                <div className="mb-4 grid gap-3 rounded-lg border border-slate-700/80 bg-slate-900/60 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                    <div>
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            Audio clips available
+                        </p>
+                        <p className="mt-0.5 text-2xl font-semibold text-slate-100">
+                            {audioClipText}
+                        </p>
+                        {audioSummaryError && (
+                            <p className="mt-1 text-xs text-red-300">
+                                Could not load clip count: {audioSummaryError}
+                            </p>
+                        )}
+                        {retrainState.message && (
+                            <p className={`mt-1 text-xs ${
+                                retrainState.status === 'error' ? 'text-red-300' : 'text-emerald-300'
+                            }`}>
+                                {retrainState.message}
+                            </p>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleRetrainModel}
+                        disabled={retrainState.status === 'running'}
+                        className="rounded-lg bg-amber-500/90 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition-colors hover:bg-amber-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/80 disabled:cursor-wait disabled:opacity-60"
+                    >
+                        {retrainState.status === 'running' ? 'Queuing...' : 'Retrain model'}
+                    </button>
+                </div>
+            )}
             {!isTileVariant && dayNavigationControls}
             {timeframeControls}
             {eventFilterControls}
