@@ -1,31 +1,22 @@
 import { NextResponse } from 'next/server'
+import {authHeaders, jsonResponse, missingTokenResponse, tokenFromRequest} from '@/app/api/_gardenBackend'
 
 const GOVEE_THERMOMETER_API_URL =
     process.env.GARDEN_GOVEE_THERMOMETER_API_URL ||
     'https://bengarlock.com/api/v1/garden/govee/thermometer/'
-const GARDEN_API_TOKEN = process.env.GARDEN_API_TOKEN || ''
-
-function headers() {
-    return {
-        Accept: 'application/json',
-        ...(GARDEN_API_TOKEN ? { Authorization: `Token ${GARDEN_API_TOKEN}` } : {}),
-    }
-}
 
 export async function GET(request) {
+    if (!tokenFromRequest(request)) return missingTokenResponse()
+
     const upstreamUrl = new URL(GOVEE_THERMOMETER_API_URL)
     request.nextUrl.searchParams.forEach((value, key) => {
         upstreamUrl.searchParams.set(key, value)
     })
 
     const response = await fetch(upstreamUrl, {
-        headers: headers(),
+        headers: authHeaders(request),
         cache: 'no-store',
     })
 
-    const data = await response.json().catch(() => ({
-        message: `Govee thermometer request failed with HTTP ${response.status}.`,
-    }))
-
-    return NextResponse.json(data, { status: response.status })
+    return jsonResponse(response, `Govee thermometer request failed with HTTP ${response.status}.`)
 }

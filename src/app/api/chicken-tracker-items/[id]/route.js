@@ -1,16 +1,9 @@
 import { NextResponse } from 'next/server'
+import {authHeaders, jsonResponse, missingTokenResponse, tokenFromRequest} from '@/app/api/_gardenBackend'
 
 const CHICKEN_TRACKER_ITEMS_API_URL =
     process.env.GARDEN_CHICKEN_TRACKER_ITEMS_API_URL ||
     'https://bengarlock.com/api/v1/garden/chicken-tracker-items/'
-const GARDEN_API_TOKEN = process.env.GARDEN_API_TOKEN || ''
-
-function headers() {
-    return {
-        Accept: 'application/json',
-        ...(GARDEN_API_TOKEN ? { Authorization: `Token ${GARDEN_API_TOKEN}` } : {}),
-    }
-}
 
 async function readJson(request) {
     try {
@@ -21,6 +14,8 @@ async function readJson(request) {
 }
 
 export async function PATCH(request, { params }) {
+    if (!tokenFromRequest(request)) return missingTokenResponse()
+
     const { id } = await params
     const payload = await readJson(request)
     if (!payload) {
@@ -29,26 +24,21 @@ export async function PATCH(request, { params }) {
 
     const response = await fetch(`${CHICKEN_TRACKER_ITEMS_API_URL}${id}/`, {
         method: 'PATCH',
-        headers: {
-            ...headers(),
-            'Content-Type': 'application/json',
-        },
+        headers: authHeaders(request, {'Content-Type': 'application/json'}),
         body: JSON.stringify(payload),
         cache: 'no-store',
     })
 
-    const data = await response.json().catch(() => ({
-        message: `Chicken tracker item update failed with HTTP ${response.status}.`,
-    }))
-
-    return NextResponse.json(data, { status: response.status })
+    return jsonResponse(response, `Chicken tracker item update failed with HTTP ${response.status}.`)
 }
 
 export async function DELETE(request, { params }) {
+    if (!tokenFromRequest(request)) return missingTokenResponse()
+
     const { id } = await params
     const response = await fetch(`${CHICKEN_TRACKER_ITEMS_API_URL}${id}/`, {
         method: 'DELETE',
-        headers: headers(),
+        headers: authHeaders(request),
         cache: 'no-store',
     })
 
@@ -56,9 +46,5 @@ export async function DELETE(request, { params }) {
         return new NextResponse(null, { status: 204 })
     }
 
-    const data = await response.json().catch(() => ({
-        message: `Chicken tracker item delete failed with HTTP ${response.status}.`,
-    }))
-
-    return NextResponse.json(data, { status: response.status })
+    return jsonResponse(response, `Chicken tracker item delete failed with HTTP ${response.status}.`)
 }

@@ -1,6 +1,6 @@
 import {Inter} from "next/font/google";
 import "./globals.css";
-import NavBar from "@/app/NavBar";
+import AppShell from "@/app/AppShell";
 
 const inter = Inter({subsets: ["latin"]});
 
@@ -14,12 +14,7 @@ export default function RootLayout({children}) {
     return (
         <html lang="en">
         <body className={inter.className}>
-        <div className="min-h-screen w-full">
-            <NavBar />
-            <div className="min-h-screen w-full pt-32 md:pl-64 md:pt-0 lg:pl-80">
-                {children}
-            </div>
-        </div>
+        <AppShell>{children}</AppShell>
         </body>
         </html>
     );

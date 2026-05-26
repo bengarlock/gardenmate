@@ -3,7 +3,8 @@
 import * as d3 from 'd3'
 import {useEffect, useMemo, useRef, useState} from 'react'
 
-const WATER_USAGE_API = 'https://bengarlock.com/api/v1/garden/water/water-usage/'
+const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
+const WATER_USAGE_API = `${APP_BASE_PATH}/api/garden/water/water-usage`
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const WATER_COST_PER_GALLON = 0.0059
 const CURRENCY_FORMAT = new Intl.NumberFormat(undefined, {

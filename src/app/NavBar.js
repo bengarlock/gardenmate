@@ -1,13 +1,22 @@
 'use client'
 import Link from 'next/link';
 import {usePathname} from 'next/navigation';
+import {useRouter} from 'next/navigation';
 
+const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
 
 const NavBar = () => {
 
     const pathname = usePathname()
+    const router = useRouter()
     const plantsSelected = pathname === '/plants' || pathname.startsWith('/plants/')
     const chickensSelected = pathname === '/chickens' || pathname.startsWith('/chickens/')
+
+    const onLogout = async () => {
+        await fetch(`${APP_BASE_PATH}/api/logout`, {method: 'POST'})
+        router.replace('/login')
+        router.refresh()
+    }
 
     return (
         <nav className="fixed left-0 top-0 z-50 w-full bg-gray-900/85 text-white md:h-screen md:w-64 lg:w-80">
@@ -37,6 +46,9 @@ const NavBar = () => {
                     Chickens
                 </div>
             </Link>
+            <button className="navbar-icon w-full" type="button" onClick={onLogout}>
+                Sign out
+            </button>
             </div>
         </nav>
     )

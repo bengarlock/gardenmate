@@ -3,8 +3,8 @@
 import * as d3 from 'd3'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-const NOISE_API = 'https://bengarlock.com/api/v1/garden/noise/'
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
+const NOISE_API = `${APP_BASE_PATH}/api/garden/noise`
 const NVR_CLIPS_API = `${APP_BASE_PATH}/api/nvr-clips`
 const CHICKEN_AUDIO_EVENTS_API = `${APP_BASE_PATH}/api/chicken-audio-events`
 const CHICKEN_AUDIO_SUMMARY_API = `${CHICKEN_AUDIO_EVENTS_API}/summary`
@@ -1123,7 +1123,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             }
             setRetrainState({
                 status: 'queued',
-                message: json.task_id ? `Retrain queued (${json.task_id}).` : 'Retrain queued.',
+                message: json.task_id ? `Retrain queued (${json.task_id}).` : json.message || 'Retrain queued.',
             })
         } catch (e) {
             setRetrainState({

@@ -1,18 +1,13 @@
 import { NextResponse } from 'next/server'
+import {authHeaders, jsonResponse, missingTokenResponse, tokenFromRequest} from '@/app/api/_gardenBackend'
 
 const CHICKEN_AUDIO_EVENTS_API_URL =
     process.env.GARDEN_CHICKEN_AUDIO_EVENTS_API_URL ||
     'https://bengarlock.com/api/v1/garden/chicken-audio-events/'
-const GARDEN_API_TOKEN = process.env.GARDEN_API_TOKEN || ''
-
-function headers() {
-    return {
-        Accept: 'application/json',
-        ...(GARDEN_API_TOKEN ? { Authorization: `Token ${GARDEN_API_TOKEN}` } : {}),
-    }
-}
 
 export async function PATCH(request, { params }) {
+    if (!tokenFromRequest(request)) return missingTokenResponse()
+
     const { id } = await params
     let payload
     try {
@@ -23,17 +18,10 @@ export async function PATCH(request, { params }) {
 
     const response = await fetch(`${CHICKEN_AUDIO_EVENTS_API_URL}${id}/human-label/`, {
         method: 'PATCH',
-        headers: {
-            ...headers(),
-            'Content-Type': 'application/json',
-        },
+        headers: authHeaders(request, {'Content-Type': 'application/json'}),
         body: JSON.stringify(payload),
         cache: 'no-store',
     })
 
-    const data = await response.json().catch(() => ({
-        message: `Chicken audio event label update failed with HTTP ${response.status}.`,
-    }))
-
-    return NextResponse.json(data, { status: response.status })
+    return jsonResponse(response, `Chicken audio event label update failed with HTTP ${response.status}.`)
 }

@@ -1,12 +1,15 @@
 import * as d3 from "d3";
 import {useRef, useEffect, useState} from "react";
 
+const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
+const WEATHER_API = `${APP_BASE_PATH}/api/garden/weather`
+
 export default function LinePlot() {
 
     const [weatherData, setWeatherData] = useState([])
 
     useEffect(() => {
-        fetch('https://bengarlock.com/api/v1/garden/weather/')
+        fetch(WEATHER_API)
             .then(res => res.json())
             .then(data => setWeatherData(data))
             .catch(err => console.log(err))

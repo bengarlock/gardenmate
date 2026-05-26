@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
+import {authHeaders, jsonResponse, missingTokenResponse, tokenFromRequest} from '@/app/api/_gardenBackend'
 
 const CLIP_API_URL =
     process.env.GARDEN_NVR_CLIPS_API_URL || 'https://bengarlock.com/api/v1/garden/nvr-clips/'
-const GARDEN_API_TOKEN = process.env.GARDEN_API_TOKEN || ''
 const CLIP_LIVE_GUARD_MS = 15 * 1000
 
 function clampClipPayload(payload) {
@@ -27,6 +27,8 @@ function clampClipPayload(payload) {
 }
 
 export async function POST(request) {
+    if (!tokenFromRequest(request)) return missingTokenResponse()
+
     let payload
     try {
         payload = await request.json()
@@ -36,23 +38,17 @@ export async function POST(request) {
 
     const response = await fetch(CLIP_API_URL, {
         method: 'POST',
-        headers: {
-            Accept: 'application/json',
-            ...(GARDEN_API_TOKEN ? { Authorization: `Token ${GARDEN_API_TOKEN}` } : {}),
-            'Content-Type': 'application/json',
-        },
+        headers: authHeaders(request, {'Content-Type': 'application/json'}),
         body: JSON.stringify(clampClipPayload(payload)),
         cache: 'no-store',
     })
 
-    const data = await response.json().catch(() => ({
-        message: `Clip request failed with HTTP ${response.status}.`,
-    }))
-
-    return NextResponse.json(data, { status: response.status })
+    return jsonResponse(response, `Clip request failed with HTTP ${response.status}.`)
 }
 
 export async function DELETE(request) {
+    if (!tokenFromRequest(request)) return missingTokenResponse()
+
     let payload
     try {
         payload = await request.json()
@@ -62,18 +58,10 @@ export async function DELETE(request) {
 
     const response = await fetch(CLIP_API_URL, {
         method: 'DELETE',
-        headers: {
-            Accept: 'application/json',
-            ...(GARDEN_API_TOKEN ? { Authorization: `Token ${GARDEN_API_TOKEN}` } : {}),
-            'Content-Type': 'application/json',
-        },
+        headers: authHeaders(request, {'Content-Type': 'application/json'}),
         body: JSON.stringify(payload),
         cache: 'no-store',
     })
 
-    const data = await response.json().catch(() => ({
-        message: `Clip deletion failed with HTTP ${response.status}.`,
-    }))
-
-    return NextResponse.json(data, { status: response.status })
+    return jsonResponse(response, `Clip deletion failed with HTTP ${response.status}.`)
 }

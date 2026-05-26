@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-const FORECAST_API = 'https://bengarlock.com/api/v1/garden/weather/forecast/'
-const HISTORICAL_WEATHER_API = 'https://bengarlock.com/api/v1/garden/weather/'
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
+const FORECAST_API = `${APP_BASE_PATH}/api/garden/weather/forecast`
+const HISTORICAL_WEATHER_API = `${APP_BASE_PATH}/api/garden/weather`
 const WEATHER_PROXY_API = `${APP_BASE_PATH}/api/weather`
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const TEMP_COLOR_MIN_F = 0

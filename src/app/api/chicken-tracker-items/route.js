@@ -1,16 +1,9 @@
 import { NextResponse } from 'next/server'
+import {authHeaders, jsonResponse, missingTokenResponse, tokenFromRequest} from '@/app/api/_gardenBackend'
 
 const CHICKEN_TRACKER_ITEMS_API_URL =
     process.env.GARDEN_CHICKEN_TRACKER_ITEMS_API_URL ||
     'https://bengarlock.com/api/v1/garden/chicken-tracker-items/'
-const GARDEN_API_TOKEN = process.env.GARDEN_API_TOKEN || ''
-
-function headers() {
-    return {
-        Accept: 'application/json',
-        ...(GARDEN_API_TOKEN ? { Authorization: `Token ${GARDEN_API_TOKEN}` } : {}),
-    }
-}
 
 async function readJson(request) {
     try {
@@ -21,24 +14,24 @@ async function readJson(request) {
 }
 
 export async function GET(request) {
+    if (!tokenFromRequest(request)) return missingTokenResponse()
+
     const upstreamUrl = new URL(CHICKEN_TRACKER_ITEMS_API_URL)
     request.nextUrl.searchParams.forEach((value, key) => {
         upstreamUrl.searchParams.set(key, value)
     })
 
     const response = await fetch(upstreamUrl, {
-        headers: headers(),
+        headers: authHeaders(request),
         cache: 'no-store',
     })
 
-    const data = await response.json().catch(() => ({
-        message: `Chicken tracker items request failed with HTTP ${response.status}.`,
-    }))
-
-    return NextResponse.json(data, { status: response.status })
+    return jsonResponse(response, `Chicken tracker items request failed with HTTP ${response.status}.`)
 }
 
 export async function POST(request) {
+    if (!tokenFromRequest(request)) return missingTokenResponse()
+
     const payload = await readJson(request)
     if (!payload) {
         return NextResponse.json({ message: 'Invalid JSON body.' }, { status: 400 })
@@ -46,17 +39,10 @@ export async function POST(request) {
 
     const response = await fetch(CHICKEN_TRACKER_ITEMS_API_URL, {
         method: 'POST',
-        headers: {
-            ...headers(),
-            'Content-Type': 'application/json',
-        },
+        headers: authHeaders(request, {'Content-Type': 'application/json'}),
         body: JSON.stringify(payload),
         cache: 'no-store',
     })
 
-    const data = await response.json().catch(() => ({
-        message: `Chicken tracker item creation failed with HTTP ${response.status}.`,
-    }))
-
-    return NextResponse.json(data, { status: response.status })
+    return jsonResponse(response, `Chicken tracker item creation failed with HTTP ${response.status}.`)
 }

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 
-const FORECAST_API = 'https://bengarlock.com/api/v1/garden/weather/forecast/'
+const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
+const FORECAST_API = `${APP_BASE_PATH}/api/garden/weather/forecast`
 const HEAT_THRESHOLD_F = 90
 const OUTLOOK_DAYS = 7
 
