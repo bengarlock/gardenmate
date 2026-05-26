@@ -46,10 +46,29 @@ const NavBar = () => {
                     Chickens
                 </div>
             </Link>
-            <button className="navbar-icon w-full" type="button" onClick={onLogout}>
-                Sign out
-            </button>
             </div>
+            <button
+                aria-label="Sign out"
+                className="fixed bottom-4 left-4 flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-gray-950/85 text-stone-200 shadow-lg transition hover:border-amber-400/60 hover:bg-amber-500 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-amber-300 md:absolute"
+                title="Sign out"
+                type="button"
+                onClick={onLogout}
+            >
+                <svg
+                    aria-hidden="true"
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                >
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <path d="M16 17l5-5-5-5" />
+                    <path d="M21 12H9" />
+                </svg>
+            </button>
         </nav>
     )
 }

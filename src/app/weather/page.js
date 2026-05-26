@@ -160,6 +160,76 @@ function windDirectionLabel(degrees) {
     return labels[Math.round(Number(degrees) / 45) % labels.length]
 }
 
+function daylightHoursForDailySummary(hours) {
+    return hours
+        .map((hour) => ({
+            ...hour,
+            forecastDate: new Date(hour.forecasted_at),
+            precipProbability: Number(hour.precip_probability),
+            iconName: String(hour.icon || '').toLowerCase(),
+            conditionName: String(hour.conditions || '').toLowerCase(),
+        }))
+        .filter((hour) => {
+            if (Number.isNaN(hour.forecastDate.getTime())) return false
+            const localHour = hour.forecastDate.getHours()
+            return localHour >= 7 && localHour <= 19
+        })
+}
+
+function includesAny(value, terms) {
+    return terms.some((term) => value.includes(term))
+}
+
+function friendlyDailyForecastLabel(day, hourly = []) {
+    const dailyLabel = day?.conditions ?? 'Forecast'
+    const dailyText = `${dailyLabel} ${day?.icon ?? ''}`.toLowerCase()
+    const dailyPrecip = Number(day?.precip_probability)
+    const hours = daylightHoursForDailySummary(hourly)
+
+    if (includesAny(dailyText, ['storm', 'thunder'])) return dailyLabel
+    if (includesAny(dailyText, ['rain', 'shower']) || (Number.isFinite(dailyPrecip) && dailyPrecip >= 45)) {
+        return dailyLabel
+    }
+    if (hours.length < 3) return dailyLabel
+
+    const counts = hours.reduce(
+        (summary, hour) => {
+            const text = `${hour.iconName} ${hour.conditionName}`
+            const precip = hour.precipProbability
+            if (includesAny(text, ['storm', 'thunder', 'rain', 'shower']) || (Number.isFinite(precip) && precip >= 45)) {
+                summary.wet += 1
+            } else if (includesAny(text, ['cloud', 'overcast'])) {
+                if (includesAny(text, ['partly', 'few', 'scattered'])) {
+                    summary.partly += 1
+                } else {
+                    summary.cloudy += 1
+                }
+            } else if (includesAny(text, ['clear', 'sun'])) {
+                summary.clear += 1
+            }
+            return summary
+        },
+        { clear: 0, partly: 0, cloudy: 0, wet: 0 }
+    )
+    const dryDaylightHours = hours.length - counts.wet
+    if (counts.wet >= 2) return dailyLabel
+    if (counts.cloudy / hours.length >= 0.55) return dailyLabel
+    if ((counts.clear + counts.partly) / hours.length >= 0.8 && dryDaylightHours >= hours.length - 1) {
+        if (counts.clear / hours.length >= 0.65) return 'Sunny'
+        return 'Mostly Sunny'
+    }
+    if (dailyText.includes('partly cloudy') && counts.clear >= counts.cloudy && counts.wet === 0) {
+        return 'Mostly Sunny'
+    }
+    return dailyLabel
+}
+
+function friendlyDailyForecastIcon(day, label) {
+    if (label === 'Sunny') return 'clear-day'
+    if (label === 'Mostly Sunny') return 'clear-day'
+    return day?.icon
+}
+
 function WeatherMetric({ label, value, helper }) {
     return (
         <div className="rounded-lg border border-sky-200/15 bg-gradient-to-br from-sky-950/85 via-blue-950/80 to-cyan-950/70 p-4 shadow-xl">
@@ -237,7 +307,7 @@ function WindArrow({ degrees }) {
     )
 }
 
-function HourlyDayForecast({ day, hourly }) {
+function HourlyDayForecast({ day, hourly, embedded = false }) {
     const scrollRef = useRef(null)
     const dragRef = useRef({
         pointerId: null,
@@ -378,28 +448,42 @@ function HourlyDayForecast({ day, hourly }) {
     }
 
     return (
-        <div className="mt-4 overflow-hidden rounded-lg border border-sky-100/15 bg-gradient-to-br from-sky-950/70 via-blue-950/70 to-cyan-950/60">
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-sky-100/10 p-4">
-                <div>
-                    <p className="text-sm font-semibold uppercase tracking-wide text-sky-200/70">
-                        {formatDay(day.forecasted_at)}
-                    </p>
-                    <h3 className="mt-1 text-2xl font-semibold text-white">{day.conditions ?? 'Forecast'}</h3>
+        <div className="mt-4 overflow-hidden rounded-lg border border-sky-100/15 bg-sky-950/45">
+            {!embedded && (
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-sky-100/10 p-4">
+                    <div>
+                        <p className="text-sm font-semibold uppercase tracking-wide text-sky-200/70">
+                            {formatDay(day.forecasted_at)}
+                        </p>
+                        <h3 className="mt-1 text-2xl font-semibold text-white">{day.conditions ?? 'Forecast'}</h3>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-3 text-sm text-sky-100">
+                        <WeatherIcon icon={day.icon} className="h-14 w-14 shrink-0" />
+                        <span>Rain {formatNumber(day.precip_probability)}%</span>
+                        <span>Low {formatTemperature(day.air_temperature_low)}</span>
+                        <span>High {formatTemperature(day.air_temperature_high)}</span>
+                        <button
+                            type="button"
+                            onClick={handleCurrentClick}
+                            className="rounded-md border border-sky-100/20 bg-sky-100/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-sky-100/40 hover:bg-sky-100/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
+                        >
+                            Current
+                        </button>
+                    </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-3 text-sm text-sky-100">
-                    <WeatherIcon icon={day.icon} className="h-14 w-14 shrink-0" />
-                    <span>Rain {formatNumber(day.precip_probability)}%</span>
-                    <span>Low {formatTemperature(day.air_temperature_low)}</span>
-                    <span>High {formatTemperature(day.air_temperature_high)}</span>
+            )}
+            {embedded && (
+                <div className="flex items-center justify-between gap-3 border-b border-sky-100/10 px-3 py-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-100/70">Hourly</p>
                     <button
                         type="button"
                         onClick={handleCurrentClick}
-                        className="rounded-md border border-sky-100/20 bg-sky-100/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-sky-100/40 hover:bg-sky-100/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
+                        className="rounded-md border border-sky-100/20 bg-sky-100/10 px-2 py-1 text-xs font-semibold text-white transition hover:border-sky-100/40 hover:bg-sky-100/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
                     >
                         Current
                     </button>
                 </div>
-            </div>
+            )}
             <div
                 ref={scrollRef}
                 onPointerDown={handlePointerDown}
@@ -1448,16 +1532,24 @@ export default function WeatherPage() {
         },
         [forecast]
     )
+    const hourlyForecastByDay = useMemo(
+        () =>
+            hourlyForecast.reduce((days, hour) => {
+                const key = localDayKey(hour.forecasted_at)
+                if (!key) return days
+                if (!days[key]) days[key] = []
+                days[key].push(hour)
+                return days
+            }, {}),
+        [hourlyForecast]
+    )
     const selectedDailyForecast = useMemo(
         () => dailyForecast.find((day) => localDayKey(day.forecasted_at) === selectedDailyKey) ?? null,
         [dailyForecast, selectedDailyKey]
     )
     const selectedHourlyForecast = useMemo(
-        () => {
-            if (!selectedDailyKey) return []
-            return hourlyForecast.filter((hour) => localDayKey(hour.forecasted_at) === selectedDailyKey)
-        },
-        [hourlyForecast, selectedDailyKey]
+        () => (selectedDailyKey ? hourlyForecastByDay[selectedDailyKey] ?? [] : []),
+        [hourlyForecastByDay, selectedDailyKey]
     )
     const metrics = useMemo(() => {
         if (!observation) return []
@@ -1503,7 +1595,7 @@ export default function WeatherPage() {
         }
 
         const hasSelectedDay = dailyForecast.some((day) => localDayKey(day.forecasted_at) === selectedDailyKey)
-        if (!hasSelectedDay) setSelectedDailyKey(localDayKey(dailyForecast[0].forecasted_at))
+        if (selectedDailyKey !== null && !hasSelectedDay) setSelectedDailyKey(null)
     }, [dailyForecast, selectedDailyKey])
 
     return (
@@ -1594,45 +1686,60 @@ export default function WeatherPage() {
                             {dailyForecast.map((day) => {
                                 const dayKey = localDayKey(day.forecasted_at)
                                 const isSelected = dayKey === selectedDailyKey
+                                const dayHourlyForecast = hourlyForecastByDay[dayKey] ?? []
+                                const dailyLabel = friendlyDailyForecastLabel(day, dayHourlyForecast)
+                                const dailyIcon = friendlyDailyForecastIcon(day, dailyLabel)
 
                                 return (
-                                    <button
+                                    <article
                                         key={day.id}
-                                        type="button"
-                                        onClick={() => setSelectedDailyKey(dayKey)}
-                                        className={`flex h-full flex-col rounded-lg border bg-gradient-to-br p-4 text-left shadow-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 ${
+                                        className={`flex h-full flex-col rounded-lg border bg-gradient-to-br p-4 shadow-lg transition ${
                                             isSelected
                                                 ? 'border-sky-200/70 from-sky-700/85 via-blue-800/80 to-cyan-800/65 shadow-sky-500/20'
                                                 : 'border-sky-100/15 from-sky-800/70 via-blue-900/70 to-cyan-900/50 hover:border-sky-200/45'
                                         }`}
                                     >
-                                        <div className="flex min-h-[6.75rem] items-start justify-between gap-3">
-                                            <div>
-                                                <p className="text-xs font-semibold uppercase tracking-wide text-sky-100/65">
-                                                    {formatDay(day.forecasted_at)}
-                                                </p>
-                                                <p className="mt-2 min-h-[2.75rem] text-lg font-semibold leading-tight text-white">
-                                                    {day.conditions ?? 'Forecast'}
-                                                </p>
+                                        <button
+                                            type="button"
+                                            aria-expanded={isSelected}
+                                            onClick={() => setSelectedDailyKey(isSelected ? null : dayKey)}
+                                            className="flex h-full w-full flex-col rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
+                                        >
+                                            <div className="flex min-h-[6.75rem] items-start justify-between gap-3">
+                                                <div>
+                                                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-100/65">
+                                                        {formatDay(day.forecasted_at)}
+                                                    </p>
+                                                    <p className="mt-2 min-h-[2.75rem] text-lg font-semibold leading-tight text-white">
+                                                        {dailyLabel}
+                                                    </p>
+                                                </div>
+                                                <WeatherIcon icon={dailyIcon} className="h-10 w-10 shrink-0" />
                                             </div>
-                                            <WeatherIcon icon={day.icon} className="h-10 w-10 shrink-0" />
-                                        </div>
-                                        <div className="mt-auto flex items-baseline gap-2">
-                                            <span className="text-2xl font-semibold text-white">
-                                                {formatTemperature(day.air_temperature_high)}
-                                            </span>
-                                            <span className="text-sm text-sky-100/60">
-                                                / {formatTemperature(day.air_temperature_low)}
-                                            </span>
-                                        </div>
-                                        <p className="mt-2 text-xs text-sky-100">
-                                            Rain {formatNumber(day.precip_probability)}%
-                                        </p>
-                                    </button>
+                                            <div className="mt-auto flex items-baseline gap-2">
+                                                <span className="text-2xl font-semibold text-white">
+                                                    {formatTemperature(day.air_temperature_high)}
+                                                </span>
+                                                <span className="text-sm text-sky-100/60">
+                                                    / {formatTemperature(day.air_temperature_low)}
+                                                </span>
+                                            </div>
+                                            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-sky-100">
+                                                <span>Rain {formatNumber(day.precip_probability)}%</span>
+                                                <span className="font-semibold">{isSelected ? 'Collapse' : 'Hourly'}</span>
+                                            </div>
+                                        </button>
+                                    </article>
                                 )
                             })}
                         </div>
-                        <HourlyDayForecast day={selectedDailyForecast} hourly={selectedHourlyForecast} />
+                        {selectedDailyForecast && (
+                            <HourlyDayForecast
+                                day={selectedDailyForecast}
+                                hourly={selectedHourlyForecast}
+                                embedded
+                            />
+                        )}
                     </section>
                 )}
 
