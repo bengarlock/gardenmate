@@ -2,6 +2,7 @@
 import Weather from "@/app/components/Weather"
 import Countdown from "@/app/components/Countdown"
 import DangerousHeatAdvisory from '@/app/chickens/DangerousHeatAdvisory'
+import ChickenResourceWarningTile from '@/app/ChickenResourceWarningTile'
 
 export default function Home() {
     return (
@@ -19,6 +20,8 @@ export default function Home() {
                 <DangerousHeatAdvisory />
 
                 <section className="grid gap-3 md:grid-cols-2">
+                    <ChickenResourceWarningTile />
+
                     <div className="group min-h-36 rounded-lg border border-white/10 bg-stone-900/80 p-5 shadow-xl transition hover:border-emerald-300/70 hover:bg-stone-900">
                         <div className="flex items-start justify-between gap-4">
                             <h2 className="text-xl font-semibold text-white">
