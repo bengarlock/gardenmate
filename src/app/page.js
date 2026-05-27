@@ -1,8 +1,41 @@
 'use client'
+import {useEffect, useState} from 'react'
 import Weather from "@/app/components/Weather"
 import Countdown from "@/app/components/Countdown"
 import DangerousHeatAdvisory from '@/app/chickens/DangerousHeatAdvisory'
 import ChickenResourceWarningTile from '@/app/ChickenResourceWarningTile'
+
+const PLANTING_COUNTDOWN_REVEAL_DATE = new Date(2026, 10, 1)
+const PLANTING_DAY = new Date(2027, 4, 1)
+
+function PlantingCountdownTile() {
+    const [showCountdown, setShowCountdown] = useState(false)
+
+    useEffect(() => {
+        setShowCountdown(Date.now() >= PLANTING_COUNTDOWN_REVEAL_DATE.getTime())
+    }, [])
+
+    if (!showCountdown) return null
+
+    return (
+        <div className="group min-h-36 rounded-lg border border-white/10 bg-stone-900/80 p-5 shadow-xl transition hover:border-emerald-300/70 hover:bg-stone-900">
+            <div className="flex items-start justify-between gap-4">
+                <h2 className="text-xl font-semibold text-white">
+                    Countdown Till Planting Day
+                </h2>
+                <span className="rounded-full border border-emerald-300/40 px-3 py-1 text-xs font-semibold uppercase text-emerald-200">
+                    Track
+                </span>
+            </div>
+
+            <div className="mt-6 flex min-h-16 items-center">
+                <div className="font-mono text-xl leading-relaxed text-white sm:text-2xl">
+                    <Countdown date={PLANTING_DAY} />
+                </div>
+            </div>
+        </div>
+    )
+}
 
 export default function Home() {
     return (
@@ -22,22 +55,7 @@ export default function Home() {
                 <section className="grid gap-3 md:grid-cols-2">
                     <ChickenResourceWarningTile />
 
-                    <div className="group min-h-36 rounded-lg border border-white/10 bg-stone-900/80 p-5 shadow-xl transition hover:border-emerald-300/70 hover:bg-stone-900">
-                        <div className="flex items-start justify-between gap-4">
-                            <h2 className="text-xl font-semibold text-white">
-                                Countdown Till Planting Day
-                            </h2>
-                            <span className="rounded-full border border-emerald-300/40 px-3 py-1 text-xs font-semibold uppercase text-emerald-200">
-                                Track
-                            </span>
-                        </div>
-
-                        <div className="mt-6 flex min-h-16 items-center">
-                            <div className="font-mono text-xl leading-relaxed text-white sm:text-2xl">
-                                <Countdown date={new Date('2026-05-02')} />
-                            </div>
-                        </div>
-                    </div>
+                    <PlantingCountdownTile />
 
                     <div className="group min-h-36 rounded-lg border border-white/10 bg-stone-900/80 p-5 shadow-xl transition hover:border-emerald-300/70 hover:bg-stone-900">
                         <div className="flex items-start justify-between gap-4">
