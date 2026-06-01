@@ -27,6 +27,8 @@ const REVIEW_MATCH_TOLERANCE_MS = BIN_MS / 2 + 1000
 /** Bar fill gradient: quiet (low dB / more negative) → loud */
 const LEVEL_COLORS = ['#22c55e', '#eab308', '#f97316', '#a855f7']
 const HUMAN_LABEL_COLORS = {
+    target_chicken_noise: '#ef4444',
+    other_chicken: '#64748b',
     chicken: '#ef4444',
     not_chicken: '#64748b',
     unsure: '#64748b',
@@ -141,6 +143,22 @@ function humanLabelColor(humanLabel) {
     return HUMAN_LABEL_COLORS[humanLabel] ?? null
 }
 
+function isHumanTargetChickenLabel(humanLabel) {
+    return humanLabel === 'target_chicken_noise' || humanLabel === 'chicken'
+}
+
+function humanLabelDisplay(humanLabel) {
+    const labels = {
+        target_chicken_noise: 'target call',
+        other_chicken: 'other chicken',
+        chicken: 'chicken',
+        not_chicken: 'not chicken',
+        unsure: 'unsure',
+        ignored: 'ignored',
+    }
+    return labels[humanLabel] ?? humanLabel?.replace('_', ' ')
+}
+
 function predictionConfidence(event) {
     const confidence = Number(event?.predicted_confidence)
     return Number.isFinite(confidence) ? confidence : null
@@ -168,6 +186,7 @@ const LIVE_CACHE_TTL_MS = REFRESH_MS
 const HISTORICAL_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const LIVE_RANGE_GRACE_MS = REFRESH_MS * 2
 const CHICKEN_EVENTS_FOR_MAX_SCORE = 9
+const CHICKEN_NOISE_SCORE_MIN_DB = -41
 const noiseCache = new Map()
 
 function getNoiseCacheEntry(key) {
@@ -627,18 +646,20 @@ export default function NoiseLevelChart({ variant = 'full' }) {
 
     const getBarFill = (point) => {
         const events = getAudioEventsForPoint(point)
-        if (events.some((event) => event.human_label === 'chicken')) return HUMAN_LABEL_COLORS.chicken
+        if (events.some((event) => isHumanTargetChickenLabel(event.human_label))) {
+            return HUMAN_LABEL_COLORS.target_chicken_noise
+        }
 
         return 'url(#noiseBarFill)'
     }
 
     const getBarOpacity = (point) => {
         const events = getAudioEventsForPoint(point)
-        return events.some((event) => event.human_label === 'chicken') ? 0.78 : 0.92
+        return events.some((event) => isHumanTargetChickenLabel(event.human_label)) ? 0.78 : 0.92
     }
 
     const hasHumanChickenForPoint = (point) =>
-        getAudioEventsForPoint(point).some((event) => event.human_label === 'chicken')
+        getAudioEventsForPoint(point).some((event) => isHumanTargetChickenLabel(event.human_label))
 
     const hasHumanReviewForPoint = (point) =>
         getAudioEventsForPoint(point).some((event) => Boolean(event.human_label))
@@ -651,6 +672,17 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const hasHighConfidencePredictionForPoint = (point) =>
         !hasReviewedNonChickenForPoint(point) &&
         getAudioEventsForPoint(point).some(isHighConfidencePredictedChicken)
+
+    const pointQualifiesForChickenNoiseScore = (point) => {
+        const rms = Number(point?.rms ?? point?.y)
+        return Number.isFinite(rms) && rms >= CHICKEN_NOISE_SCORE_MIN_DB
+    }
+
+    const hasScoredHumanChickenForPoint = (point) =>
+        pointQualifiesForChickenNoiseScore(point) && hasHumanChickenForPoint(point)
+
+    const hasScoredAiChickenForPoint = (point) =>
+        pointQualifiesForChickenNoiseScore(point) && hasHighConfidencePredictionForPoint(point)
 
     const getBestPredictionForPoint = (point) =>
         getAudioEventsForPoint(point)
@@ -690,18 +722,18 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         let chickenNoiseEventCount = 0
 
         series.forEach((point) => {
-            const hasChickenLabel = hasHumanChickenForPoint(point)
-            const hasAiChickenAlert = hasHighConfidencePredictionForPoint(point)
+            const hasScoredHumanChicken = hasScoredHumanChickenForPoint(point)
+            const hasScoredAiChicken = hasScoredAiChickenForPoint(point)
             if (hasHumanReviewForPoint(point)) {
                 reviewedCount += 1
-                if (hasChickenLabel) chickenCount += 1
+                if (hasScoredHumanChicken) chickenCount += 1
             }
-            if (hasAiChickenAlert) aiPredictionCount += 1
-            if (hasChickenLabel || hasAiChickenAlert) chickenNoiseEventCount += 1
+            if (hasScoredAiChicken) aiPredictionCount += 1
+            if (hasScoredHumanChicken || hasScoredAiChicken) chickenNoiseEventCount += 1
         })
 
         return {
-            value: Math.min(10, 1 + Math.min(CHICKEN_EVENTS_FOR_MAX_SCORE, chickenCount)),
+            value: Math.min(10, 1 + Math.min(CHICKEN_EVENTS_FOR_MAX_SCORE, chickenNoiseEventCount)),
             chickenCount,
             reviewedCount,
             aiPredictionCount,
@@ -1637,7 +1669,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                     </p>
                     {getAudioEventForPoint(hoverPoint)?.human_label && (
                         <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
-                            {getAudioEventForPoint(hoverPoint).human_label.replace('_', ' ')}
+                            {humanLabelDisplay(getAudioEventForPoint(hoverPoint).human_label)}
                         </p>
                     )}
                     {!getAudioEventForPoint(hoverPoint)?.human_label && hoverPrediction && (
@@ -1720,9 +1752,9 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                             </p>
                             <div className="grid grid-cols-2 gap-2">
                                 {[
-                                    ['chicken', 'Chicken'],
+                                    ['target_chicken_noise', 'Target call'],
+                                    ['other_chicken', 'Other chicken'],
                                     ['not_chicken', 'Not chicken'],
-                                    ['unsure', 'Unsure'],
                                     ['ignored', 'Ignore'],
                                 ].map(([value, label]) => {
                                     const selected = selectedHumanLabel === value
@@ -1749,7 +1781,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                             </div>
                             {selectedHumanLabel && (
                                 <p className="mt-2 text-xs text-slate-400">
-                                    Saved as {selectedHumanLabel.replace('_', ' ')}.
+                                    Saved as {humanLabelDisplay(selectedHumanLabel)}.
                                 </p>
                             )}
                         </div>
@@ -1938,7 +1970,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                         {noiseScore.visibleCount}
                     </div>
                     <p className="col-span-4 text-[11px] text-slate-500">
-                        Score is based on confirmed chicken labels. AI alerts require 90% confidence.
+                        Score includes chicken detections at -41 dB or higher. AI alerts require 90% confidence.
                     </p>
                 </div>
             </div>}
