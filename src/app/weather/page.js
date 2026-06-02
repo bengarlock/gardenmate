@@ -1693,7 +1693,7 @@ export default function WeatherPage() {
                                 return (
                                     <article
                                         key={day.id}
-                                        className={`flex h-full flex-col rounded-lg border bg-gradient-to-br p-4 shadow-lg transition ${
+                                        className={`flex h-full min-w-0 flex-col overflow-hidden rounded-lg border bg-gradient-to-br p-4 shadow-lg transition ${
                                             isSelected
                                                 ? 'border-sky-200/70 from-sky-700/85 via-blue-800/80 to-cyan-800/65 shadow-sky-500/20'
                                                 : 'border-sky-100/15 from-sky-800/70 via-blue-900/70 to-cyan-900/50 hover:border-sky-200/45'
@@ -1703,30 +1703,30 @@ export default function WeatherPage() {
                                             type="button"
                                             aria-expanded={isSelected}
                                             onClick={() => setSelectedDailyKey(isSelected ? null : dayKey)}
-                                            className="flex h-full w-full flex-col rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
+                                            className="flex h-full w-full min-w-0 flex-col rounded-md text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"
                                         >
-                                            <div className="flex min-h-[6.75rem] items-start justify-between gap-3">
-                                                <div>
-                                                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-100/65">
+                                            <div className="relative min-h-[7.25rem] min-w-0 pr-12">
+                                                <div className="min-w-0">
+                                                    <p className="max-w-[8rem] whitespace-normal break-normal text-xs font-semibold uppercase tracking-wide text-sky-100/65">
                                                         {formatDay(day.forecasted_at)}
                                                     </p>
-                                                    <p className="mt-2 min-h-[2.75rem] text-lg font-semibold leading-tight text-white">
+                                                    <p className="mt-2 min-h-[3rem] max-w-[8.25rem] whitespace-normal break-words text-lg font-semibold leading-tight text-white">
                                                         {dailyLabel}
                                                     </p>
                                                 </div>
-                                                <WeatherIcon icon={dailyIcon} className="h-10 w-10 shrink-0" />
+                                                <WeatherIcon icon={dailyIcon} className="absolute right-0 top-0 h-10 w-10" />
                                             </div>
-                                            <div className="mt-auto flex items-baseline gap-2">
-                                                <span className="text-2xl font-semibold text-white">
+                                            <div className="mt-auto flex min-w-0 items-baseline gap-2">
+                                                <span className="shrink-0 text-2xl font-semibold text-white">
                                                     {formatTemperature(day.air_temperature_high)}
                                                 </span>
-                                                <span className="text-sm text-sky-100/60">
+                                                <span className="min-w-0 text-sm text-sky-100/60">
                                                     / {formatTemperature(day.air_temperature_low)}
                                                 </span>
                                             </div>
-                                            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-sky-100">
-                                                <span>Rain {formatNumber(day.precip_probability)}%</span>
-                                                <span className="font-semibold">{isSelected ? 'Collapse' : 'Hourly'}</span>
+                                            <div className="mt-2 flex min-w-0 items-center justify-between gap-2 text-xs text-sky-100">
+                                                <span className="min-w-0 break-words">Rain {formatNumber(day.precip_probability)}%</span>
+                                                <span className="shrink-0 font-semibold">{isSelected ? 'Collapse' : 'Hourly'}</span>
                                             </div>
                                         </button>
                                     </article>

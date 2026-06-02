@@ -689,15 +689,20 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             .filter(isHighConfidencePredictedChicken)
             .sort((a, b) => (predictionConfidence(b) ?? 0) - (predictionConfidence(a) ?? 0))[0] ?? null
 
+    const getPointKey = (point) => audioEventTimeKey(point?.t)
+
+    const isClipPanelPoint = (point) =>
+        Boolean(clipPanel?.pointKey && getPointKey(point) === clipPanel.pointKey)
+
     const getBarStroke = (point, index) => {
-        if (clipPanel?.idx === index) return '#f59e0b'
+        if (isClipPanelPoint(point)) return '#f59e0b'
         if (hoverIdx === index) return '#f8fafc'
         if (hasHighConfidencePredictionForPoint(point)) return AI_CHICKEN_STROKE
         return '#0f172a'
     }
 
     const getBarStrokeWidth = (point, index) =>
-        clipPanel?.idx === index
+        isClipPanelPoint(point)
             ? 2
             : hoverIdx === index
               ? 1.5
@@ -706,7 +711,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                 : 0.5
 
     const getBarStrokeOpacity = (point, index) =>
-        clipPanel?.idx === index || hoverIdx === index || hasHighConfidencePredictionForPoint(point) ? 1 : 0.35
+        isClipPanelPoint(point) || hoverIdx === index || hasHighConfidencePredictionForPoint(point) ? 1 : 0.35
 
     const visibleSeries = useMemo(() => {
         if (eventFilter !== 'detected') return series
@@ -815,6 +820,8 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const requestClipForBar = (idx) => {
         const point = visibleSeries[idx]
         if (!point) return
+        const pointKey = getPointKey(point)
+        if (!pointKey) return
 
         if (clipRequestRef.current) {
             clipRequestRef.current.abort()
@@ -827,6 +834,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
 
         setClipPanel({
             idx,
+            pointKey,
             requestedAt,
             status: 'loading',
             clipUrl: null,
@@ -859,6 +867,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             .then((json) => {
                 setClipPanel({
                     idx,
+                    pointKey,
                     requestedAt,
                     status: 'ready',
                     clipUrl: json.clip_url,
@@ -870,6 +879,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                 if (e.name === 'AbortError') return
                 setClipPanel({
                     idx,
+                    pointKey,
                     requestedAt,
                     status: 'error',
                     clipUrl: null,
@@ -1062,6 +1072,8 @@ export default function NoiseLevelChart({ variant = 'full' }) {
             const nextIdx = currentIdx + 1
             if (currentIdx >= 0 && nextIdx < visibleSeries.length) {
                 requestClipForBar(nextIdx)
+            } else {
+                handleCloseClipPanel()
             }
         } catch (e) {
             setAudioEventError(e.message ?? String(e))
@@ -1522,8 +1534,9 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         )
     }
 
-    const selectedPoint =
-        clipPanel && visibleSeries[clipPanel.idx] ? visibleSeries[clipPanel.idx] : null
+    const selectedPoint = clipPanel?.pointKey
+        ? visibleSeries.find((point) => getPointKey(point) === clipPanel.pointKey) ?? null
+        : null
     const selectedAudioEvent = selectedPoint ? getAudioEventForPoint(selectedPoint) : null
     const selectedAudioEventKey = selectedPoint ? audioEventTimeKey(selectedPoint.t) : null
     const selectedHumanLabel = selectedAudioEvent?.human_label ?? null
@@ -1841,7 +1854,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                             const h = Math.max(0, yBaseline - yTop)
                             return (
                                 <rect
-                                    key={`bar-${i}`}
+                                    key={`bar-${getPointKey(d) ?? i}`}
                                     x={x}
                                     y={yTop}
                                     width={barWidthPx}
