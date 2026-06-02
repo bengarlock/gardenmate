@@ -87,9 +87,8 @@ export default function ChickenResourcesPage() {
 
     const sortedItems = useMemo(() => {
         return [...items].sort((a, b) => {
-            const aRemaining = a.percent_remaining ?? -1
-            const bRemaining = b.percent_remaining ?? -1
-            return aRemaining - bRemaining || a.name.localeCompare(b.name)
+            const nameSort = (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' })
+            return nameSort || String(a.id).localeCompare(String(b.id))
         })
     }, [items])
 
