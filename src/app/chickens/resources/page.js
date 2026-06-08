@@ -54,6 +54,14 @@ function formatDate(value) {
     }).format(date)
 }
 
+function formatDaysSince(value) {
+    if (!value) return 'unknown'
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return 'unknown'
+    const elapsedDays = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000))
+    return `${elapsedDays} ${elapsedDays === 1 ? 'day' : 'days'} ago`
+}
+
 function formatDays(days) {
     if (days === null || days === undefined) return 'Unknown'
     if (days <= 0) return 'Depleted'
@@ -430,7 +438,7 @@ export default function ChickenResourcesPage() {
                                                         </span>
                                                     </h2>
                                                     <p className="mt-1 text-sm text-stone-300">
-                                                        Last reset {formatDate(item.last_reset_at)}. Due {formatDate(item.next_depletion_at)}.
+                                                        Last reset {formatDate(item.last_reset_at)} ({formatDaysSince(item.last_reset_at)}). Due {formatDate(item.next_depletion_at)}.
                                                     </p>
                                                 </div>
                                                 <div className="flex shrink-0 gap-2">
