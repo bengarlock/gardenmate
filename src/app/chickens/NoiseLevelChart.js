@@ -28,6 +28,7 @@ const REVIEW_MATCH_TOLERANCE_MS = BIN_MS / 2 + 1000
 const LEVEL_COLORS = ['#22c55e', '#eab308', '#f97316', '#a855f7']
 const HUMAN_LABEL_COLORS = {
     target_chicken_noise: '#ef4444',
+    hard_negative: '#64748b',
     other_chicken: '#64748b',
     chicken: '#ef4444',
     not_chicken: '#64748b',
@@ -150,6 +151,7 @@ function isHumanTargetChickenLabel(humanLabel) {
 function humanLabelDisplay(humanLabel) {
     const labels = {
         target_chicken_noise: 'target call',
+        hard_negative: 'false alert',
         other_chicken: 'other chicken',
         chicken: 'chicken',
         not_chicken: 'not chicken',
@@ -1766,7 +1768,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                             <div className="grid grid-cols-2 gap-2">
                                 {[
                                     ['target_chicken_noise', 'Target call'],
-                                    ['other_chicken', 'Other chicken'],
+                                    ['hard_negative', 'False alert'],
                                     ['not_chicken', 'Not chicken'],
                                     ['ignored', 'Ignore'],
                                 ].map(([value, label]) => {
