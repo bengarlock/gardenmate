@@ -2,6 +2,7 @@
 
 import {
     PLANT_PEST_RESOURCE_MARKER,
+    PLANT_PEST_RESOURCE_TYPES,
     ResourceTrackerPage,
     isPlantPestResource,
     stripPlantPestMarker,
@@ -9,7 +10,7 @@ import {
 
 const pestStartingForm = {
     name: '',
-    tracker_type: 'custom',
+    tracker_type: 'pest_trap',
     depletion_days: '30',
     color: '#86efac',
     last_reset_at: '',
@@ -40,6 +41,7 @@ export default function PlantPestsPage() {
             editTitle="Edit Pest Resource"
             emptyText="No pest resources are being tracked yet."
             startingForm={pestStartingForm}
+            trackerTypes={PLANT_PEST_RESOURCE_TYPES}
         />
     )
 }

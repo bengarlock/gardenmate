@@ -8,17 +8,6 @@ const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenma
 export const RESOURCE_TRACKER_API = `${APP_BASE_PATH}/api/chicken-tracker-items`
 export const PLANT_PEST_RESOURCE_MARKER = '[gardenmate:plant-pest]'
 
-export function isPlantPestResource(item) {
-    const name = (item?.name || '').trim().toLowerCase()
-    const trackerType = (item?.tracker_type || '').trim().toLowerCase()
-    const notes = item?.notes || ''
-    return (
-        name === 'mosquito magnet' ||
-        notes.includes(PLANT_PEST_RESOURCE_MARKER) ||
-        ['pest', 'pest_control', 'pest-control', 'mosquito'].includes(trackerType)
-    )
-}
-
 export function stripPlantPestMarker(notes = '') {
     return notes
         .replaceAll(PLANT_PEST_RESOURCE_MARKER, '')
@@ -26,7 +15,7 @@ export function stripPlantPestMarker(notes = '') {
         .trim()
 }
 
-const trackerTypes = [
+export const CHICKEN_RESOURCE_TYPES = [
     ['feed', 'Feed'],
     ['water', 'Water'],
     ['cleaning', 'Cleaning'],
@@ -35,6 +24,34 @@ const trackerTypes = [
     ['medication', 'Medication'],
     ['custom', 'Custom'],
 ]
+
+export const PLANT_PEST_RESOURCE_TYPES = [
+    ['pest_trap', 'Pest trap'],
+    ['repellent', 'Repellent'],
+    ['treatment', 'Treatment'],
+    ['monitoring', 'Monitoring'],
+    ['beneficial_insect', 'Beneficial insects'],
+    ['plant_supply', 'Supply'],
+    ['custom', 'Custom'],
+]
+
+const plantPestResourceTypeValues = new Set(
+    PLANT_PEST_RESOURCE_TYPES
+        .map(([value]) => value)
+        .filter((value) => value !== 'custom')
+)
+
+export function isPlantPestResource(item) {
+    const name = (item?.name || '').trim().toLowerCase()
+    const trackerType = (item?.tracker_type || '').trim().toLowerCase()
+    const notes = item?.notes || ''
+    return (
+        name === 'mosquito magnet' ||
+        notes.includes(PLANT_PEST_RESOURCE_MARKER) ||
+        plantPestResourceTypeValues.has(trackerType) ||
+        ['pest', 'pest_control', 'pest-control', 'mosquito'].includes(trackerType)
+    )
+}
 
 const resourceColors = [
     '#d6d3d1',
@@ -114,6 +131,7 @@ export function ResourceTrackerPage({
     editTitle = 'Edit Resource',
     emptyText = 'No resources are being tracked yet.',
     startingForm = initialForm,
+    trackerTypes = CHICKEN_RESOURCE_TYPES,
 }) {
     const [items, setItems] = useState([])
     const [form, setForm] = useState(startingForm)
@@ -724,6 +742,7 @@ export default function ChickenResourcesPage() {
     return (
         <ResourceTrackerPage
             itemFilter={(item) => !isPlantPestResource(item)}
+            trackerTypes={CHICKEN_RESOURCE_TYPES}
         />
     )
 }
