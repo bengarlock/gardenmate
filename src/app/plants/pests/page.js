@@ -1,12 +1,45 @@
 'use client'
 
-const Pests = () => {
+import {
+    PLANT_PEST_RESOURCE_MARKER,
+    ResourceTrackerPage,
+    isPlantPestResource,
+    stripPlantPestMarker,
+} from '@/app/ResourceTrackerPage'
 
-    return(
-        <main className="min-h-screen w-full bg-gray-500/90 px-4 py-8 text-white">
-            <h1 className="text-3xl font-bold tracking-tight md:text-5xl">Pests</h1>
-        </main>
-    )
+const pestStartingForm = {
+    name: '',
+    tracker_type: 'custom',
+    depletion_days: '30',
+    color: '#86efac',
+    last_reset_at: '',
+    notes: '',
 }
 
-export default Pests
+function markAsPlantPest(payload) {
+    const notes = stripPlantPestMarker(payload.notes || '')
+    return {
+        ...payload,
+        tracker_type: payload.tracker_type || 'custom',
+        notes: notes ? `${notes}\n${PLANT_PEST_RESOURCE_MARKER}` : PLANT_PEST_RESOURCE_MARKER,
+    }
+}
+
+export default function PlantPestsPage() {
+    return (
+        <ResourceTrackerPage
+            title="Pests"
+            eyebrow="Plants"
+            eyebrowHref="/plants"
+            subNav={null}
+            itemFilter={isPlantPestResource}
+            payloadTransform={markAsPlantPest}
+            notesForDisplay={stripPlantPestMarker}
+            activeLabel="tracked"
+            createTitle="New Pest Resource"
+            editTitle="Edit Pest Resource"
+            emptyText="No pest resources are being tracked yet."
+            startingForm={pestStartingForm}
+        />
+    )
+}

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import {useEffect, useMemo, useState} from 'react'
+import {isPlantPestResource} from '@/app/ResourceTrackerPage'
 
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
 const TRACKER_API = `${APP_BASE_PATH}/api/chicken-tracker-items`
@@ -16,7 +17,11 @@ function formatDays(days) {
     return `${numericDays.toFixed(numericDays < 10 ? 1 : 0)} days left`
 }
 
-export default function ChickenResourceWarningTile() {
+export function ResourceWarningTile({
+    href,
+    eyebrow,
+    itemFilter = () => true,
+}) {
     const [items, setItems] = useState([])
 
     useEffect(() => {
@@ -27,7 +32,7 @@ export default function ChickenResourceWarningTile() {
                 const response = await fetch(TRACKER_API, {cache: 'no-store'})
                 const data = await response.json()
                 if (!response.ok || cancelled) return
-                setItems(Array.isArray(data.results) ? data.results : [])
+                setItems(Array.isArray(data.results) ? data.results.filter(itemFilter) : [])
             } catch {
                 if (!cancelled) setItems([])
             }
@@ -44,7 +49,7 @@ export default function ChickenResourceWarningTile() {
         return items
             .filter((item) => {
                 const percentRemaining = Number(item.percent_remaining)
-                return Number.isFinite(percentRemaining) && percentRemaining < WARNING_THRESHOLD
+                return item.status !== 'paused' && Number.isFinite(percentRemaining) && percentRemaining < WARNING_THRESHOLD
             })
             .sort((a, b) => Number(a.percent_remaining) - Number(b.percent_remaining))
     }, [items])
@@ -55,14 +60,14 @@ export default function ChickenResourceWarningTile() {
 
     return (
         <Link
-            href="/chickens/resources"
+            href={href}
             aria-live="polite"
             className="group block min-h-36 rounded-lg border border-amber-300/50 bg-amber-950/85 p-5 shadow-xl shadow-amber-950/30 transition hover:border-amber-200 hover:bg-amber-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-200 md:col-span-2"
         >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                     <p className="text-sm font-semibold uppercase text-amber-200">
-                        Chicken resources
+                        {eyebrow}
                     </p>
                     <h2 className="mt-1 text-xl font-semibold text-white">
                         {criticalCount > 0 ? 'Resource depleted' : 'Resource running low'}
@@ -108,5 +113,25 @@ export default function ChickenResourceWarningTile() {
                 </p>
             ) : null}
         </Link>
+    )
+}
+
+export function PlantPestResourceWarningTile() {
+    return (
+        <ResourceWarningTile
+            href="/plants/pests"
+            eyebrow="Plant pest resources"
+            itemFilter={isPlantPestResource}
+        />
+    )
+}
+
+export default function ChickenResourceWarningTile() {
+    return (
+        <ResourceWarningTile
+            href="/chickens/resources"
+            eyebrow="Chicken resources"
+            itemFilter={(item) => !isPlantPestResource(item)}
+        />
     )
 }

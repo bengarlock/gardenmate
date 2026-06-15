@@ -3,7 +3,7 @@ import {useEffect, useState} from 'react'
 import Weather from "@/app/components/Weather"
 import Countdown from "@/app/components/Countdown"
 import DangerousHeatAdvisory from '@/app/chickens/DangerousHeatAdvisory'
-import ChickenResourceWarningTile from '@/app/ChickenResourceWarningTile'
+import ChickenResourceWarningTile, {PlantPestResourceWarningTile} from '@/app/ChickenResourceWarningTile'
 
 const PLANTING_COUNTDOWN_REVEAL_DATE = new Date(2026, 10, 1)
 const PLANTING_DAY = new Date(2027, 4, 1)
@@ -54,6 +54,8 @@ export default function Home() {
 
                 <section className="grid gap-3 md:grid-cols-2">
                     <ChickenResourceWarningTile />
+
+                    <PlantPestResourceWarningTile />
 
                     <PlantingCountdownTile />
 
