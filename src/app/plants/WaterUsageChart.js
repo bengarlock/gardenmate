@@ -289,6 +289,16 @@ export default function WaterUsageChart() {
 
     const barWidth = Math.max(8, Math.min(42, innerW / Math.max(series.length, 1) * 0.56))
     const hoverPoint = hoverIdx != null ? series[hoverIdx] : null
+    const lastUpdatedAt = payload?.last_updated ? new Date(payload.last_updated) : null
+    const lastUpdatedLabel =
+        lastUpdatedAt && !Number.isNaN(lastUpdatedAt.getTime())
+            ? new Intl.DateTimeFormat(undefined, {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+            }).format(lastUpdatedAt)
+            : null
 
 
     const rangePicker = rangePickerOpen ? (
@@ -402,6 +412,11 @@ export default function WaterUsageChart() {
                     <p className="mt-1 text-sm font-semibold text-cyan-100">
                         {CURRENCY_FORMAT.format(totalWaterCost)} water cost
                     </p>
+                    {lastUpdatedLabel && (
+                        <p className="mt-1 text-xs font-medium text-sky-300">
+                            Last updated {lastUpdatedLabel}
+                        </p>
+                    )}
                 </div>
                 <div className="flex flex-wrap justify-start gap-2 md:justify-end">
                     <button
