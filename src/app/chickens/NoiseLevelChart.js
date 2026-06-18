@@ -663,6 +663,11 @@ export default function NoiseLevelChart({ variant = 'full' }) {
     const hasHumanChickenForPoint = (point) =>
         getAudioEventsForPoint(point).some((event) => isHumanTargetChickenLabel(event.human_label))
 
+    const hasConfirmedTargetCallForPoint = (point) =>
+        getAudioEventsForPoint(point).some(
+            (event) => event.human_label === 'target_chicken_noise'
+        )
+
     const hasHumanReviewForPoint = (point) =>
         getAudioEventsForPoint(point).some((event) => Boolean(event.human_label))
 
@@ -680,8 +685,8 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         return Number.isFinite(rms) && rms >= CHICKEN_NOISE_SCORE_MIN_DB
     }
 
-    const hasScoredHumanChickenForPoint = (point) =>
-        pointQualifiesForChickenNoiseScore(point) && hasHumanChickenForPoint(point)
+    const hasScoredTargetCallForPoint = (point) =>
+        pointQualifiesForChickenNoiseScore(point) && hasConfirmedTargetCallForPoint(point)
 
     const hasScoredAiChickenForPoint = (point) =>
         pointQualifiesForChickenNoiseScore(point) && hasHighConfidencePredictionForPoint(point)
@@ -729,14 +734,14 @@ export default function NoiseLevelChart({ variant = 'full' }) {
         let chickenNoiseEventCount = 0
 
         series.forEach((point) => {
-            const hasScoredHumanChicken = hasScoredHumanChickenForPoint(point)
+            const hasScoredTargetCall = hasScoredTargetCallForPoint(point)
             const hasScoredAiChicken = hasScoredAiChickenForPoint(point)
             if (hasHumanReviewForPoint(point)) {
                 reviewedCount += 1
-                if (hasScoredHumanChicken) chickenCount += 1
+                if (hasScoredTargetCall) chickenCount += 1
             }
             if (hasScoredAiChicken) aiPredictionCount += 1
-            if (hasScoredHumanChicken || hasScoredAiChicken) chickenNoiseEventCount += 1
+            if (hasScoredTargetCall) chickenNoiseEventCount += 1
         })
 
         return {
@@ -1625,7 +1630,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                 {isTileVariant && (
                     <div className="border-t border-slate-700/70 pt-2 sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0">
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                            Chicken noise events today
+                            Target calls today
                         </p>
                         <p className="mt-0.5 text-2xl font-semibold text-slate-100">
                             {noiseScore ? noiseScore.chickenNoiseEventCount : '—'}
@@ -1962,7 +1967,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                 <div className="mx-auto mt-2 grid max-w-lg grid-cols-4 gap-2 border-t border-slate-700/70 pt-3 text-center text-xs text-slate-300">
                     <div>
                         <span className="block text-[10px] uppercase tracking-wide text-slate-500">
-                            Chicken
+                            Target calls
                         </span>
                         {noiseScore.chickenCount}
                     </div>
@@ -1985,7 +1990,7 @@ export default function NoiseLevelChart({ variant = 'full' }) {
                         {noiseScore.visibleCount}
                     </div>
                     <p className="col-span-4 text-[11px] text-slate-500">
-                        Score includes chicken detections at -41 dB or higher. AI alerts require 90% confidence.
+                        Score includes confirmed target calls at -41 dB or higher. AI alerts require 90% confidence but do not affect the score.
                     </p>
                 </div>
             </div>}
