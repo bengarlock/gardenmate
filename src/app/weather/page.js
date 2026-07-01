@@ -1892,7 +1892,7 @@ export default function WeatherPage() {
                                                     <p className="max-w-[8rem] whitespace-normal break-normal text-xs font-semibold uppercase tracking-wide text-sky-100/65">
                                                         {formatDay(day.forecasted_at)}
                                                     </p>
-                                                    <p className="mt-2 min-h-[3rem] max-w-[8.25rem] whitespace-normal break-words text-lg font-semibold leading-tight text-white">
+                                                    <p className="mt-2 min-h-[3rem] max-w-[8.25rem] whitespace-normal break-normal text-base font-semibold leading-tight text-white">
                                                         {dailyLabel}
                                                     </p>
                                                 </div>
