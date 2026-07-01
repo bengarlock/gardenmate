@@ -58,12 +58,12 @@ function formatHour(value) {
     }).format(new Date(value))
 }
 
-function formatChartTick(value) {
+function formatChartTick(value, includeTime = true) {
     if (!value) return '--'
     return new Intl.DateTimeFormat(undefined, {
         month: 'short',
         day: 'numeric',
-        hour: 'numeric',
+        ...(includeTime ? { hour: 'numeric' } : {}),
     }).format(new Date(value))
 }
 
@@ -793,10 +793,19 @@ function HistoricalWeatherChart() {
         const todayDate = dayStartLocal(new Date())
         const todayVisible = !isBeforeLocalDay(todayDate, currentRange.start) && !isBeforeLocalDay(currentRange.end, todayDate)
         const tempTicks = Array.from({ length: 5 }, (_, index) => tempMin + (tempSpan / 4) * index)
-        const tickIndexes = Array.from(
-            new Set([0, 1, 2, 3, 4].map((index) => Math.round((visiblePoints.length - 1) * (index / 4))))
+        const selectedDayCount = Math.max(
+            1,
+            Math.round((dayStartLocal(currentRange.end) - dayStartLocal(currentRange.start)) / (24 * 60 * 60 * 1000)) + 1
         )
-        const xTicks = tickIndexes.map((index) => visiblePoints[index]).filter(Boolean)
+        const xTickCount = Math.min(5, selectedDayCount)
+        const xTickOffsets = Array.from(
+            new Set(
+                Array.from({ length: xTickCount }, (_, index) =>
+                    xTickCount === 1 ? 0 : Math.round((selectedDayCount - 1) * (index / (xTickCount - 1)))
+                )
+            )
+        )
+        const xTicks = xTickOffsets.map((dayOffset) => addLocalDays(currentRange.start, dayOffset))
         const barWidth = Math.max(2, Math.min(10, innerW / visiblePoints.length - 1))
 
         return {
@@ -1411,14 +1420,14 @@ function HistoricalWeatherChart() {
                                         </text>
                                     </g>
                                 )}
-                                {chart.xTicks.map((point) => (
+                                {chart.xTicks.map((tick) => (
                                     <g
-                                        key={`history-x-${point.time.toISOString()}`}
-                                        transform={`translate(${chart.xScale(point.time)},${innerH})`}
+                                        key={`history-x-${tick.toISOString()}`}
+                                        transform={`translate(${chart.xScale(tick)},${innerH})`}
                                     >
                                         <line y2={6} stroke="#bae6fd" strokeOpacity="0.35" />
                                         <text y={24} textAnchor="middle" fill="#bae6fd" fillOpacity="0.72" fontSize={12}>
-                                            {formatChartTick(point.time)}
+                                            {formatChartTick(tick, chart.xTicks.length === 1)}
                                         </text>
                                     </g>
                                 ))}
