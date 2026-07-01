@@ -554,7 +554,22 @@ function temperatureLineSegments(points, xScale, yScale) {
     })
 }
 
-function HistoricalWeatherChart() {
+function nearestChartPoint(points, targetX, xScale, maxDistance = 24) {
+    let nearest = null
+    let nearestDistance = Infinity
+
+    points.forEach((point) => {
+        const distance = Math.abs(xScale(point.chartTime ?? point.time) - targetX)
+        if (distance < nearestDistance) {
+            nearest = point
+            nearestDistance = distance
+        }
+    })
+
+    return nearestDistance <= maxDistance ? nearest : null
+}
+
+function HistoricalWeatherChart({ forecast = [] }) {
     const firstFetchRef = useRef(true)
     const firstOverlayFetchRef = useRef(true)
     const [records, setRecords] = useState([])
@@ -577,11 +592,42 @@ function HistoricalWeatherChart() {
         rain: true,
     })
     const [showCurrentYearOverlay, setShowCurrentYearOverlay] = useState(false)
+    const [showProjectedWeather, setShowProjectedWeather] = useState(true)
+    const [hoveredWeather, setHoveredWeather] = useState(null)
     const width = 900
     const height = 320
     const margin = { top: 22, right: 58, bottom: 54, left: 58 }
     const innerW = width - margin.left - margin.right
     const innerH = height - margin.top - margin.bottom
+
+    function handleChartPointerMove(event) {
+        if (!chart) return
+        const bounds = event.currentTarget.getBoundingClientRect()
+        const svgX = ((event.clientX - bounds.left) / bounds.width) * width
+        const svgY = ((event.clientY - bounds.top) / bounds.height) * height
+        const chartX = svgX - margin.left
+        const chartY = svgY - margin.top
+
+        if (chartX < 0 || chartX > innerW || chartY < 0 || chartY > innerH) {
+            setHoveredWeather(null)
+            return
+        }
+
+        const currentPoint = nearestChartPoint(visiblePoints, chartX, chart.xScale)
+        const overlayPoint = showCurrentYearOverlay
+            ? nearestChartPoint(visibleOverlayPoints, chartX, chart.xScale)
+            : null
+        const projectedPoint = showProjectedWeather
+            ? nearestChartPoint(visibleProjectedPoints, chartX, chart.xScale)
+            : null
+
+        if (!currentPoint && !overlayPoint && !projectedPoint) {
+            setHoveredWeather(null)
+            return
+        }
+
+        setHoveredWeather({ currentPoint, overlayPoint, projectedPoint, svgX, svgY })
+    }
 
     const currentRange = useMemo(() => {
         if (rangeApplied?.start && rangeApplied?.end) {
@@ -752,6 +798,31 @@ function HistoricalWeatherChart() {
         [currentRange.start, overlayRecords]
     )
 
+    const projectedPoints = useMemo(
+        () => forecast
+            .filter((row) => row.forecast_type === 'hourly')
+            .map((row, index) => {
+                const time = new Date(row.forecasted_at)
+                const temp = celsiusToFahrenheit(row.air_temperature)
+                const humidity = Number(row.relative_humidity)
+                const wind = Number(row.wind_avg)
+                const precipProbability = Number(row.precip_probability)
+                if (Number.isNaN(time.getTime()) || temp == null) return null
+                return {
+                    time,
+                    chartTime: time,
+                    id: row.id ?? `projected-${index}`,
+                    temp,
+                    humidity: Number.isFinite(humidity) ? humidity : null,
+                    wind: Number.isFinite(wind) ? wind : null,
+                    precipProbability: Number.isFinite(precipProbability) ? precipProbability : null,
+                }
+            })
+            .filter(Boolean)
+            .sort((a, b) => a.time - b.time),
+        [forecast]
+    )
+
     const visiblePoints = useMemo(() => {
         if (points.length === 0) return []
         const startTime = dayStartLocal(currentRange.start).getTime()
@@ -772,20 +843,29 @@ function HistoricalWeatherChart() {
         })
     }, [overlayAvailable, overlayPoints, overlayRange, showCurrentYearOverlay])
 
+    const visibleProjectedPoints = useMemo(() => {
+        if (!showProjectedWeather || projectedPoints.length === 0) return []
+        const startTime = dayStartLocal(currentRange.start).getTime()
+        const endTime = addLocalDays(dayStartLocal(currentRange.end), 1).getTime()
+        return projectedPoints.filter((point) => {
+            const pointTime = point.time.getTime()
+            return pointTime >= startTime && pointTime < endTime
+        })
+    }, [currentRange, projectedPoints, showProjectedWeather])
+
     const hasVisibleSeries = visibleSeries.temperature || visibleSeries.humidity || visibleSeries.rain
 
     const chart = useMemo(() => {
-        if (visiblePoints.length === 0) return null
-
         const firstTime = dayStartLocal(currentRange.start).getTime()
         const lastTime = addLocalDays(dayStartLocal(currentRange.end), 1).getTime()
         const timeSpan = Math.max(1, lastTime - firstTime)
-        const chartPoints = [...visiblePoints, ...visibleOverlayPoints]
+        const chartPoints = [...visiblePoints, ...visibleOverlayPoints, ...visibleProjectedPoints]
+        if (chartPoints.length === 0) return null
         const temps = chartPoints.map((point) => point.temp)
         const tempMin = Math.floor(Math.min(...temps) / 5) * 5 - 5
         const tempMax = Math.ceil(Math.max(...temps) / 5) * 5 + 5
         const tempSpan = Math.max(1, tempMax - tempMin)
-        const maxRain = Math.max(0.01, ...chartPoints.map((point) => point.rain))
+        const maxRain = Math.max(0.01, ...chartPoints.map((point) => point.rain).filter(Number.isFinite))
         const xScale = (time) => ((time.getTime() - firstTime) / timeSpan) * innerW
         const tempScale = (temp) => innerH - ((temp - tempMin) / tempSpan) * innerH
         const humidityScale = (humidity) => innerH - (humidity / 100) * innerH
@@ -830,8 +910,10 @@ function HistoricalWeatherChart() {
             humidityPath: linePath(visiblePoints, xScale, humidityScale, 'humidity'),
             overlayTempSegments: temperatureLineSegments(visibleOverlayPoints, xScale, tempScale),
             overlayHumidityPath: linePath(visibleOverlayPoints, xScale, humidityScale, 'humidity'),
+            projectedTempSegments: temperatureLineSegments(visibleProjectedPoints, xScale, tempScale),
+            projectedHumidityPath: linePath(visibleProjectedPoints, xScale, humidityScale, 'humidity'),
         }
-    }, [currentRange, innerH, innerW, visibleOverlayPoints, visiblePoints])
+    }, [currentRange, innerH, innerW, visibleOverlayPoints, visiblePoints, visibleProjectedPoints])
 
     const summary = useMemo(() => {
         if (visiblePoints.length === 0) return null
@@ -1251,6 +1333,20 @@ function HistoricalWeatherChart() {
                             <span className="h-0.5 w-5 border-t border-dashed border-rose-300 opacity-75" />
                             {overlayYear} overlay
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowProjectedWeather((current) => !current)}
+                            disabled={projectedPoints.length === 0}
+                            className={`flex items-center gap-2 rounded-md border px-3 py-2 font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 disabled:cursor-not-allowed disabled:opacity-45 ${
+                                showProjectedWeather && projectedPoints.length > 0
+                                    ? 'border-emerald-200/35 bg-emerald-300/10 text-emerald-50'
+                                    : 'border-sky-100/10 bg-sky-950/40 text-sky-100/45'
+                            }`}
+                            aria-pressed={showProjectedWeather && projectedPoints.length > 0}
+                        >
+                            <span className="h-0.5 w-5 border-t-2 border-dotted border-emerald-300" />
+                            Projected
+                        </button>
                     </div>
                     {showChartLoadingPlaceholder ? (
                         <div
@@ -1259,7 +1355,7 @@ function HistoricalWeatherChart() {
                         >
                             <span>{chartBusyMessage}</span>
                         </div>
-                    ) : !loading && !refreshing && visiblePoints.length === 0 ? (
+                    ) : !loading && !refreshing && visiblePoints.length === 0 && visibleProjectedPoints.length === 0 ? (
                         <div
                             className="flex w-full items-center justify-center rounded-lg border border-sky-100/15 bg-sky-950/35 p-5 text-sky-100/75"
                             style={{ aspectRatio: `${width} / ${height}` }}
@@ -1273,7 +1369,7 @@ function HistoricalWeatherChart() {
                         >
                             <span>Select at least one weather metric to display.</span>
                         </div>
-                    ) : chart && summary ? (
+                    ) : chart ? (
                         <div className="relative">
                             <svg
                                 width={width}
@@ -1282,6 +1378,8 @@ function HistoricalWeatherChart() {
                                 className="block h-auto w-full overflow-visible"
                                 role="img"
                                 aria-label="Historical weather chart showing selected observed weather metrics"
+                                onPointerMove={handleChartPointerMove}
+                                onPointerLeave={() => setHoveredWeather(null)}
                             >
                             <g transform={`translate(${margin.left},${margin.top})`}>
                                 {(visibleSeries.temperature ? chart.tempTicks : [0, 25, 50, 75, 100]).map((tick) => (
@@ -1366,6 +1464,19 @@ function HistoricalWeatherChart() {
                                         opacity="0.42"
                                     />
                                 ))}
+                                {visibleSeries.temperature && showProjectedWeather && chart.projectedTempSegments.map((segment) => (
+                                    <line
+                                        key={`projected-temp-${segment.id}`}
+                                        x1={segment.x1}
+                                        y1={segment.y1}
+                                        x2={segment.x2}
+                                        y2={segment.y2}
+                                        stroke="#6ee7b7"
+                                        strokeWidth={2.25}
+                                        strokeDasharray="2 5"
+                                        strokeLinecap="round"
+                                    />
+                                ))}
                                 {visibleSeries.humidity && chart.humidityPath && (
                                     <path
                                         d={chart.humidityPath}
@@ -1387,6 +1498,17 @@ function HistoricalWeatherChart() {
                                         strokeLinecap="round"
                                         strokeLinejoin="round"
                                         opacity="0.45"
+                                    />
+                                )}
+                                {visibleSeries.humidity && showProjectedWeather && chart.projectedHumidityPath && (
+                                    <path
+                                        d={chart.projectedHumidityPath}
+                                        fill="none"
+                                        stroke="#34d399"
+                                        strokeWidth={1.75}
+                                        strokeDasharray="2 5"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
                                     />
                                 )}
                                 {chart.todayMarker && (
@@ -1444,8 +1566,59 @@ function HistoricalWeatherChart() {
                                         {tick}%
                                     </text>
                                 ))}
+                                {hoveredWeather && (
+                                    <line
+                                        x1={hoveredWeather.svgX - margin.left}
+                                        x2={hoveredWeather.svgX - margin.left}
+                                        y1={0}
+                                        y2={innerH}
+                                        stroke="#e0f2fe"
+                                        strokeOpacity="0.3"
+                                        strokeDasharray="3 5"
+                                        pointerEvents="none"
+                                    />
+                                )}
                             </g>
                             </svg>
+                            {hoveredWeather && (
+                                <div
+                                    className="pointer-events-none absolute z-10 min-w-52 rounded-lg border border-sky-200/25 bg-slate-950/95 px-3 py-2 text-xs text-sky-50 shadow-xl backdrop-blur"
+                                    style={{
+                                        left: `${(hoveredWeather.svgX / width) * 100}%`,
+                                        top: `${(hoveredWeather.svgY / height) * 100}%`,
+                                        transform: hoveredWeather.svgX > width * 0.72
+                                            ? 'translate(calc(-100% - 12px), -50%)'
+                                            : 'translate(12px, -50%)',
+                                    }}
+                                >
+                                    {[
+                                        { point: hoveredWeather.currentPoint, kind: 'current' },
+                                        { point: hoveredWeather.overlayPoint, kind: 'overlay' },
+                                        { point: hoveredWeather.projectedPoint, kind: 'projected' },
+                                    ].filter(({ point }) => point).map(({ point, kind }) => {
+                                        const isOverlay = kind === 'overlay'
+                                        const isProjected = kind === 'projected'
+                                        return (
+                                            <div
+                                                key={`${kind}-${point.id}`}
+                                                className={kind !== 'current' ? 'mt-2 border-t border-sky-200/15 pt-2' : ''}
+                                            >
+                                                <p className={`font-semibold ${isOverlay ? 'text-fuchsia-200' : isProjected ? 'text-emerald-200' : 'text-sky-200'}`}>
+                                                    {isOverlay ? `${overlayYear} historical` : isProjected ? 'Projected forecast' : 'Observed'}
+                                                </p>
+                                                <p className="mb-1 text-sky-100/65">{formatTime(point.time.getTime() / 1000)}</p>
+                                                <div className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5">
+                                                    {visibleSeries.temperature && <><span>Temperature</span><span className="text-right font-semibold">{formatNumber(point.temp)}°F</span></>}
+                                                    {visibleSeries.humidity && <><span>Humidity</span><span className="text-right font-semibold">{formatNumber(point.humidity)}%</span></>}
+                                                    {visibleSeries.rain && isProjected && <><span>Rain chance</span><span className="text-right font-semibold">{formatNumber(point.precipProbability)}%</span></>}
+                                                    {visibleSeries.rain && !isProjected && <><span>Rain</span><span className="text-right font-semibold">{formatNumber(point.rain, 2)}</span></>}
+                                                    <span>Wind</span><span className="text-right font-semibold">{formatNumber(point.wind, 1)} mph</span>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
                             {chartBusyMessage && (
                                 <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                                     <span className="rounded-md border border-sky-100/15 bg-sky-950/80 px-3 py-2 text-sm font-semibold text-cyan-100 shadow-lg">
@@ -1752,7 +1925,7 @@ export default function WeatherPage() {
                     </section>
                 )}
 
-                <HistoricalWeatherChart />
+                <HistoricalWeatherChart forecast={forecast} />
             </div>
         </main>
     )
