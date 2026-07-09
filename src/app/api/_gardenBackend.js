@@ -1,11 +1,14 @@
 import {NextResponse} from 'next/server'
 
-export const AUTH_COOKIE_NAME = 'gardenMateToken'
+export const AUTH_COOKIE_NAME = 'portfolioAuthToken'
+export const LEGACY_AUTH_COOKIE_NAMES = ['gardenMateToken']
 export const GARDEN_API_BASE_URL =
     process.env.GARDEN_API_BASE_URL || 'https://bengarlock.com/api/v1/garden/'
 
 export function tokenFromRequest(request) {
-    return request.cookies.get(AUTH_COOKIE_NAME)?.value || ''
+    return request.cookies.get(AUTH_COOKIE_NAME)?.value
+        || LEGACY_AUTH_COOKIE_NAMES.map((name) => request.cookies.get(name)?.value).find(Boolean)
+        || ''
 }
 
 export function authHeaders(request, extra = {}) {

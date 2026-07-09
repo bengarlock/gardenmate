@@ -5,7 +5,8 @@ const LOGIN_PATH = '/login'
 const HOME_PATH = '/'
 const VERIFY_TOKEN_URL =
     process.env.GARDENMATE_VERIFY_TOKEN_URL || 'https://bengarlock.com/api/login/verify-token/'
-const AUTH_COOKIE_NAME = 'gardenMateToken'
+const AUTH_COOKIE_NAME = 'portfolioAuthToken'
+const LEGACY_AUTH_COOKIE_NAMES = ['gardenMateToken']
 
 function pathWithoutBase(pathname) {
     if (pathname === BASE_PATH) return '/'
@@ -23,12 +24,14 @@ function redirectTo(req, pathname) {
 }
 
 function clearAuthCookie(response) {
-    response.cookies.set(AUTH_COOKIE_NAME, '', {
+    ;[AUTH_COOKIE_NAME, ...LEGACY_AUTH_COOKIE_NAMES].forEach((name) => response.cookies.set(name, '', {
         path: '/',
         maxAge: 0,
         httpOnly: true,
-        sameSite: 'strict',
-    })
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        ...(process.env.NODE_ENV === 'production' ? {domain: '.bengarlock.com'} : {}),
+    }))
     return response
 }
 
@@ -54,6 +57,7 @@ async function isValidToken(token) {
 
 export async function proxy(req) {
     const token = req.cookies.get(AUTH_COOKIE_NAME)?.value
+        || LEGACY_AUTH_COOKIE_NAMES.map((name) => req.cookies.get(name)?.value).find(Boolean)
     const pathname = pathWithoutBase(req.nextUrl.pathname)
     const isLogin = pathname === LOGIN_PATH
     const isApi = pathname === '/api' || pathname.startsWith('/api/')

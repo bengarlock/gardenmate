@@ -1,8 +1,19 @@
 import {NextResponse} from 'next/server'
-import {AUTH_COOKIE_NAME} from '@/app/api/_gardenBackend'
+import {AUTH_COOKIE_NAME, LEGACY_AUTH_COOKIE_NAMES} from '@/app/api/_gardenBackend'
 
 const LOGIN_URL = process.env.GARDENMATE_LOGIN_URL || 'https://bengarlock.com/api/v1/login/'
 const LOGIN_AUTH_TOKEN = process.env.GARDENMATE_LOGIN_AUTH_TOKEN || ''
+
+function authCookieOptions(maxAge) {
+    return {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge,
+        ...(process.env.NODE_ENV === 'production' ? {domain: '.bengarlock.com'} : {}),
+    }
+}
 
 export async function POST(request) {
     let payload
@@ -35,12 +46,9 @@ export async function POST(request) {
     }
 
     const nextResponse = NextResponse.json({valid: true})
-    nextResponse.cookies.set(AUTH_COOKIE_NAME, data.token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        path: '/',
-        maxAge: 60 * 60 * 24,
+    nextResponse.cookies.set(AUTH_COOKIE_NAME, data.token, authCookieOptions(60 * 60 * 24 * 30))
+    LEGACY_AUTH_COOKIE_NAMES.forEach((name) => {
+        nextResponse.cookies.set(name, '', authCookieOptions(0))
     })
     return nextResponse
 }
