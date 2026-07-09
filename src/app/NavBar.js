@@ -11,6 +11,7 @@ const NavBar = () => {
     const router = useRouter()
     const plantsSelected = pathname === '/plants' || pathname.startsWith('/plants/')
     const chickensSelected = pathname === '/chickens' || pathname.startsWith('/chickens/')
+    const settingsSelected = pathname === '/settings'
 
     const onLogout = async () => {
         await fetch(`${APP_BASE_PATH}/api/logout`, {method: 'POST'})
@@ -47,13 +48,38 @@ const NavBar = () => {
                 </div>
             </Link>
             </div>
-            <button
-                aria-label="Sign out"
-                className="fixed bottom-4 left-4 flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-gray-950/85 text-stone-200 shadow-lg transition hover:border-amber-400/60 hover:bg-amber-500 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-amber-300 md:absolute"
-                title="Sign out"
-                type="button"
-                onClick={onLogout}
-            >
+            <div className="fixed bottom-4 left-4 flex flex-col gap-3 md:absolute">
+                <Link
+                    aria-label="Settings"
+                    className={`flex h-11 w-11 items-center justify-center rounded-md border shadow-lg transition focus:outline-none focus:ring-2 focus:ring-amber-300 ${
+                        settingsSelected
+                            ? 'border-amber-300 bg-amber-500 text-gray-950'
+                            : 'border-white/10 bg-gray-950/85 text-stone-200 hover:border-amber-400/60 hover:bg-amber-500 hover:text-gray-950'
+                    }`}
+                    href="/settings"
+                    title="Settings"
+                >
+                    <svg
+                        aria-hidden="true"
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                    >
+                        <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" />
+                        <path d="M19.4 15a1.8 1.8 0 0 0 .36 1.98l.06.06a2.1 2.1 0 0 1-2.97 2.97l-.06-.06a1.8 1.8 0 0 0-1.98-.36 1.8 1.8 0 0 0-1.1 1.66v.17a2.1 2.1 0 0 1-4.2 0v-.09a1.8 1.8 0 0 0-1.18-1.74 1.8 1.8 0 0 0-1.98.36l-.06.06a2.1 2.1 0 1 1-2.97-2.97l.06-.06A1.8 1.8 0 0 0 4.6 15a1.8 1.8 0 0 0-1.66-1.1h-.17a2.1 2.1 0 0 1 0-4.2h.09A1.8 1.8 0 0 0 4.6 8.52a1.8 1.8 0 0 0-.36-1.98l-.06-.06A2.1 2.1 0 1 1 7.15 3.5l.06.06a1.8 1.8 0 0 0 1.98.36h.08A1.8 1.8 0 0 0 10.3 2.26v-.17a2.1 2.1 0 0 1 4.2 0v.09a1.8 1.8 0 0 0 1.1 1.66 1.8 1.8 0 0 0 1.98-.36l.06-.06a2.1 2.1 0 1 1 2.97 2.97l-.06.06a1.8 1.8 0 0 0-.36 1.98v.08a1.8 1.8 0 0 0 1.66 1.1h.17a2.1 2.1 0 0 1 0 4.2h-.09A1.8 1.8 0 0 0 19.4 15Z" />
+                    </svg>
+                </Link>
+                <button
+                    aria-label="Sign out"
+                    className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-gray-950/85 text-stone-200 shadow-lg transition hover:border-amber-400/60 hover:bg-amber-500 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    title="Sign out"
+                    type="button"
+                    onClick={onLogout}
+                >
                 <svg
                     aria-hidden="true"
                     className="h-5 w-5"
@@ -68,7 +94,8 @@ const NavBar = () => {
                     <path d="M16 17l5-5-5-5" />
                     <path d="M21 12H9" />
                 </svg>
-            </button>
+                </button>
+            </div>
         </nav>
     )
 }
