@@ -6,7 +6,12 @@ import {isPlantPestResource} from '@/app/ResourceTrackerPage'
 
 const APP_BASE_PATH = process.env.NEXT_PUBLIC_GARDENMATE_BASE_PATH || '/gardenmate'
 const TRACKER_API = `${APP_BASE_PATH}/api/chicken-tracker-items`
-const WARNING_THRESHOLD = 25
+
+function warningThreshold(item) {
+    const threshold = Number(item.warning_threshold_percent)
+    if (!Number.isFinite(threshold)) return 25
+    return Math.max(0, Math.min(100, threshold))
+}
 
 function formatDays(days) {
     if (days === null || days === undefined) return 'timeline unknown'
@@ -49,7 +54,7 @@ export function ResourceWarningTile({
         return items
             .filter((item) => {
                 const percentRemaining = Number(item.percent_remaining)
-                return item.status !== 'paused' && Number.isFinite(percentRemaining) && percentRemaining < WARNING_THRESHOLD
+                return item.status !== 'paused' && Number.isFinite(percentRemaining) && percentRemaining <= warningThreshold(item)
             })
             .sort((a, b) => Number(a.percent_remaining) - Number(b.percent_remaining))
     }, [items])
@@ -74,8 +79,8 @@ export function ResourceWarningTile({
                     </h2>
                     <p className="mt-2 text-sm leading-6 text-amber-50/90">
                         {warnings.length === 1
-                            ? `${warnings[0].name} is below ${WARNING_THRESHOLD}%.`
-                            : `${warnings.length} tracked resources are below ${WARNING_THRESHOLD}%.`}
+                            ? `${warnings[0].name} is at or below ${warningThreshold(warnings[0])}%.`
+                            : `${warnings.length} tracked resources are at or below their warning thresholds.`}
                     </p>
                 </div>
 
@@ -87,13 +92,14 @@ export function ResourceWarningTile({
             <div className="mt-5 grid gap-2">
                 {warnings.slice(0, 3).map((item) => {
                     const percentRemaining = Math.max(0, Math.min(100, Number(item.percent_remaining)))
+                    const threshold = warningThreshold(item)
 
                     return (
                         <div key={item.id} className="grid gap-1">
                             <div className="flex items-center justify-between gap-3 text-sm">
                                 <span className="min-w-0 truncate font-semibold text-white">{item.name}</span>
                                 <span className="shrink-0 text-amber-100">
-                                    {Math.round(percentRemaining)}% - {formatDays(item.days_remaining)}
+                                    {Math.round(percentRemaining)}% / {threshold}% - {formatDays(item.days_remaining)}
                                 </span>
                             </div>
                             <div className="h-2 overflow-hidden rounded-full bg-stone-950/60">

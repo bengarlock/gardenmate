@@ -67,6 +67,7 @@ const initialForm = {
     name: '',
     tracker_type: 'feed',
     depletion_days: '7',
+    warning_threshold_percent: '25',
     color: resourceColors[0],
     last_reset_at: '',
     notes: '',
@@ -203,6 +204,7 @@ export function ResourceTrackerPage({
             name: item.name || '',
             tracker_type: item.tracker_type || 'custom',
             depletion_days: item.depletion_days ?? '7',
+            warning_threshold_percent: item.warning_threshold_percent ?? '25',
             color: itemColor(item),
             last_reset_at: toLocalDateTimeInput(item.last_reset_at),
             notes: notesForDisplay(item.notes || ''),
@@ -218,6 +220,7 @@ export function ResourceTrackerPage({
             name: form.name.trim(),
             tracker_type: form.tracker_type,
             depletion_days: Number(form.depletion_days),
+            warning_threshold_percent: Number(form.warning_threshold_percent),
             color: form.color,
             notes: form.notes.trim(),
         })
@@ -365,7 +368,7 @@ export function ResourceTrackerPage({
                                     </button>
                                 </div>
 
-                                <div className="grid gap-4 md:grid-cols-[1.4fr_0.8fr_0.8fr]">
+                                <div className="grid gap-4 md:grid-cols-[1.4fr_0.8fr_0.8fr_0.8fr]">
                                     <label className="grid gap-1 text-sm font-semibold text-stone-200">
                                         Name
                                         <input
@@ -398,6 +401,20 @@ export function ResourceTrackerPage({
                                             type="number"
                                             value={form.depletion_days}
                                             onChange={(event) => updateForm('depletion_days', event.target.value)}
+                                            className="min-h-11 rounded-md border border-white/10 bg-stone-900 px-3 text-base text-white outline-none focus:border-stone-300"
+                                        />
+                                    </label>
+
+                                    <label className="grid gap-1 text-sm font-semibold text-stone-200">
+                                        Warn at %
+                                        <input
+                                            required
+                                            min="0"
+                                            max="100"
+                                            step="1"
+                                            type="number"
+                                            value={form.warning_threshold_percent}
+                                            onChange={(event) => updateForm('warning_threshold_percent', event.target.value)}
                                             className="min-h-11 rounded-md border border-white/10 bg-stone-900 px-3 text-base text-white outline-none focus:border-stone-300"
                                         />
                                     </label>
@@ -581,7 +598,7 @@ export function ResourceTrackerPage({
                                                             </button>
                                                         </div>
 
-                                                        <div className="grid gap-4 md:grid-cols-3">
+                                                        <div className="grid gap-4 md:grid-cols-4">
                                                             <label className="grid gap-1 text-sm font-semibold text-stone-200">
                                                                 Name
                                                                 <input
@@ -614,6 +631,20 @@ export function ResourceTrackerPage({
                                                                     type="number"
                                                                     value={form.depletion_days}
                                                                     onChange={(event) => updateForm('depletion_days', event.target.value)}
+                                                                    className="min-h-11 rounded-md border border-white/10 bg-stone-900 px-3 text-base text-white outline-none focus:border-stone-300"
+                                                                />
+                                                            </label>
+
+                                                            <label className="grid gap-1 text-sm font-semibold text-stone-200">
+                                                                Warn at %
+                                                                <input
+                                                                    required
+                                                                    min="0"
+                                                                    max="100"
+                                                                    step="1"
+                                                                    type="number"
+                                                                    value={form.warning_threshold_percent}
+                                                                    onChange={(event) => updateForm('warning_threshold_percent', event.target.value)}
                                                                     className="min-h-11 rounded-md border border-white/10 bg-stone-900 px-3 text-base text-white outline-none focus:border-stone-300"
                                                                 />
                                                             </label>
@@ -689,7 +720,7 @@ export function ResourceTrackerPage({
                                                 </div>
                                                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-stone-300">
                                                     <span>{isPaused ? `Paused with ${formatDays(daysRemaining)}` : formatDays(daysRemaining)}</span>
-                                                    <span>{Math.round(percent)}% remaining</span>
+                                                    <span>{Math.round(percent)}% remaining, warns at {item.warning_threshold_percent ?? 25}%</span>
                                                 </div>
                                             </div>
 

@@ -12,6 +12,7 @@ const pestStartingForm = {
     name: '',
     tracker_type: 'pest_trap',
     depletion_days: '30',
+    warning_threshold_percent: '25',
     color: '#86efac',
     last_reset_at: '',
     notes: '',

@@ -111,7 +111,7 @@ export default function SettingsPage() {
                             Resource Notifications
                         </h2>
                         <p className="text-sm text-stone-300">
-                            Send an email when a tracked resource reaches depletion.
+                            Send an email when a tracked resource reaches its warning threshold.
                         </p>
                     </div>
 
