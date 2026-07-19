@@ -8,10 +8,10 @@ export const metadata = {
     title: "GardenMate",
     description: "Tools to make things things grow",
     icons: {
-        icon: "/favicon.ico",
+        icon: "/gardenmate/favicon.ico",
         apple: [
             {
-                url: "/apple-touch-icon.png",
+                url: "/gardenmate/apple-touch-icon.png",
                 sizes: "180x180",
                 type: "image/png",
             },
